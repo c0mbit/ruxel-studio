@@ -4,14 +4,14 @@
 
 **The Cross-Platform Visual UI Editor for Rust & Go Desktop Frameworks**
 
-[![CI/CD Build & Publish](https://github.com/ruxel-studio/ruxel-studio/actions/workflows/release-publish.yml/badge.svg)](https://github.com/ruxel-studio/ruxel-studio/actions/workflows/release-publish.yml)
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/ruxel-studio.ruxel-studio?color=007acc&label=VS%20Code%20Marketplace&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=ruxel-studio.ruxel-studio)
-[![Open VSX](https://img.shields.io/open-vsx/v/ruxel-studio/ruxel-studio?color=purple&label=Open%20VSX)](https://open-vsx.org/extension/ruxel-studio/ruxel-studio)
+[![CI/CD Build & Publish](https://github.com/c0mbit/ruxel-studio/actions/workflows/release-publish.yml/badge.svg)](https://github.com/c0mbit/ruxel-studio/actions/workflows/release-publish.yml)
+[![VS Code Extension](https://img.shields.io/badge/VS%20Code%20Extension-v0.1.0-007acc?logo=visual-studio-code)](https://github.com/c0mbit/ruxel-studio/releases)
+[![Platform Support](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#autonomous-maintenance--cicd)
 [![License: MIT / Apache-2.0](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg)](LICENSE.md)
 [![Rust 2021](https://img.shields.io/badge/rust-2021%20edition-dea584?logo=rust)](https://www.rust-lang.org/)
 [![Go 1.21+](https://img.shields.io/badge/go-1.21+-00ADD8?logo=go)](https://go.dev/)
 [![TypeScript 5.3+](https://img.shields.io/badge/typescript-5.3+-3178C6?logo=typescript)](https://www.typescriptlang.org/)
-[![PRs Welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![PRs Welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](#contributing)
 
 [Overview](#overview) • [Key Features](#key-features) • [Supported Frameworks](#supported-frameworks) • [Architecture](#architecture) • [Getting Started](#getting-started) • [Autonomous Maintenance](#autonomous-maintenance--cicd) • [License](#license)
 
@@ -209,7 +209,7 @@ ruxel-studio/
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/ruxel-studio/ruxel-studio.git
+   git clone https://github.com/c0mbit/ruxel-studio.git
    cd ruxel-studio
    ```
 
@@ -374,7 +374,7 @@ We welcome contributions from the open-source community! Whether you are buildin
    ```
 5. **Open a Pull Request** with a detailed explanation of your improvements.
 
-Please review our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
+Please review our [contributing workflow](#contributing) and open an issue or pull request.
 
 ---
 
@@ -393,6 +393,6 @@ You may choose to use Ruxel Studio under the terms of either license.
 
 Built with ❤️ by the **Ruxel Studio Open Source Community** for Rust and Go developers worldwide.
 
-[Report a Bug](https://github.com/ruxel-studio/ruxel-studio/issues) • [Request a Feature](https://github.com/ruxel-studio/ruxel-studio/issues)
+[Report a Bug](https://github.com/c0mbit/ruxel-studio/issues) • [Request a Feature](https://github.com/c0mbit/ruxel-studio/issues)
 
 </div>
