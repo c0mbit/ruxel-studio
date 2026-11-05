@@ -1,0 +1,105 @@
+{
+  "name": "ruxel-studio",
+  "displayName": "Ruxel Studio",
+  "description": "Universal Visual UI Builder & Scene Builder for Rust and Go desktop applications",
+  "version": "0.1.0",
+  "publisher": "ruxel-studio",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ruxel-studio/ruxel-studio"
+  },
+  "bugs": {
+    "url": "https://github.com/ruxel-studio/ruxel-studio/issues"
+  },
+  "homepage": "https://github.com/ruxel-studio/ruxel-studio",
+  "icon": "assets/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "rust",
+    "gui",
+    "ui-builder",
+    "scene-builder",
+    "iced",
+    "egui",
+    "slint",
+    "dioxus",
+    "fyne",
+    "visual-editor"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "ruxel.ruxEditor",
+        "displayName": "Ruxel Visual Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.rux"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "ruxel.restartDaemon",
+        "title": "Ruxel: Restart AST Daemon"
+      },
+      {
+        "command": "ruxel.validateCurrentDocument",
+        "title": "Ruxel: Validate Active Document"
+      },
+      {
+        "command": "ruxel.formatCurrentDocument",
+        "title": "Ruxel: Format Active Document"
+      },
+      {
+        "command": "ruxel.generateCode",
+        "title": "Ruxel: Generate & Export Rust Code (ui_generated.rs & controller.rs)"
+      }
+    ],
+    "configuration": {
+      "title": "Ruxel Studio",
+      "properties": {
+        "ruxel.daemonPath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Custom path to the rux-daemon executable binary."
+        },
+        "ruxel.syncServerPath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Custom path to the rux-sync-server executable binary."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -watch -p tsconfig.json",
+    "test": "node test/binaryResolver.test.mjs",
+    "package": "vsce package --no-dependencies",
+    "publish": "vsce publish --no-dependencies"
+  },
+  "devDependencies": {
+    "@ruxel/shared-types": "*",
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

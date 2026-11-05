@@ -1,0 +1,17 @@
+{
+  "name": "@ruxel/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.33"
+  }
+}

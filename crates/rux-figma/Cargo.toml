@@ -1,0 +1,23 @@
+[package]
+name = "rux-figma"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Figma API integration, auto-layout geometry resolver, and heuristic classifier for Ruxel Studio"
+
+[lib]
+test = false
+
+[dependencies]
+rux-ast = { path = "../rux-ast" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+
+[[test]]
+name = "figma_tests"
+path = "tests/figma_engine_tests.rs"

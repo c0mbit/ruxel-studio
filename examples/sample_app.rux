@@ -1,0 +1,745 @@
+{
+  "$schema": "https://ruxel.dev/schemas/rux-document.schema.json",
+  "metadata": {
+    "schema_version": "1.0.0",
+    "app_name": "RuxelStudioDemo",
+    "app_version": "0.1.0",
+    "target_frameworks": ["iced", "egui", "slint", "dioxus", "fyne", "flet"],
+    "description": "Comprehensive reference document demonstrating universal AST design and layout capabilities",
+    "authors": ["Ruxel Studio Team"],
+    "license": "MIT",
+    "created_at": "2026-11-04T00:00:00Z",
+    "updated_at": "2026-11-04T00:00:00Z"
+  },
+  "window": {
+    "title": "Ruxel Studio — Reference Application",
+    "initial_width": 1280.0,
+    "initial_height": 800.0,
+    "min_width": 640.0,
+    "min_height": 480.0,
+    "resizable": true,
+    "scale_mode": "logical",
+    "transparent": false,
+    "decorations": true,
+    "always_on_top": false,
+    "fullscreen": false
+  },
+  "assets": {
+    "fonts": [
+      {
+        "alias": "inter_regular",
+        "path": "assets/fonts/Inter-Regular.ttf",
+        "weight": "normal",
+        "style": "normal"
+      },
+      {
+        "alias": "inter_bold",
+        "path": "assets/fonts/Inter-Bold.ttf",
+        "weight": "bold",
+        "style": "normal"
+      }
+    ],
+    "icons": [
+      {
+        "alias": "search_icon",
+        "path": "assets/icons/search.svg",
+        "format": "svg"
+      },
+      {
+        "alias": "settings_icon",
+        "path": "assets/icons/settings.svg",
+        "format": "svg"
+      }
+    ],
+    "images": [
+      {
+        "alias": "app_logo",
+        "path": "assets/images/logo.png",
+        "format": "png"
+      }
+    ]
+  },
+  "theme": {
+    "active_scheme": "dark",
+    "color_palettes": {
+      "light": {
+        "primary": "#0061A4",
+        "on_primary": "#FFFFFF",
+        "primary_container": "#D1E4FF",
+        "on_primary_container": "#001D36",
+        "secondary": "#535F70",
+        "on_secondary": "#FFFFFF",
+        "secondary_container": "#D7E3F7",
+        "on_secondary_container": "#101C2B",
+        "tertiary": "#6B5778",
+        "on_tertiary": "#FFFFFF",
+        "tertiary_container": "#F2DAFF",
+        "on_tertiary_container": "#251431",
+        "error": "#BA1A1A",
+        "on_error": "#FFFFFF",
+        "error_container": "#FFDAD6",
+        "on_error_container": "#410002",
+        "surface": "#FDFCFF",
+        "on_surface": "#1A1C1E",
+        "surface_variant": "#DFE2EB",
+        "on_surface_variant": "#43474E",
+        "outline": "#73777F",
+        "outline_variant": "#C3C7D0",
+        "background": "#FDFCFF",
+        "on_background": "#1A1C1E",
+        "inverse_surface": "#2F3033",
+        "inverse_on_surface": "#F1F0F4",
+        "inverse_primary": "#9ECAFF",
+        "scrim": "#000000",
+        "shadow": "#000000"
+      },
+      "dark": {
+        "primary": "#9ECAFF",
+        "on_primary": "#003258",
+        "primary_container": "#00497D",
+        "on_primary_container": "#D1E4FF",
+        "secondary": "#BBC7DB",
+        "on_secondary": "#253140",
+        "secondary_container": "#3B4858",
+        "on_secondary_container": "#D7E3F7",
+        "tertiary": "#D6BEE4",
+        "on_tertiary": "#3B2948",
+        "tertiary_container": "#523F5F",
+        "on_tertiary_container": "#F2DAFF",
+        "error": "#FFB4AB",
+        "on_error": "#690005",
+        "error_container": "#93000A",
+        "on_error_container": "#FFDAD6",
+        "surface": "#1A1C1E",
+        "on_surface": "#E2E2E6",
+        "surface_variant": "#43474E",
+        "on_surface_variant": "#C3C7D0",
+        "outline": "#8D9199",
+        "outline_variant": "#43474E",
+        "background": "#1A1C1E",
+        "on_background": "#E2E2E6",
+        "inverse_surface": "#E2E2E6",
+        "inverse_on_surface": "#2F3033",
+        "inverse_primary": "#0061A4",
+        "scrim": "#000000",
+        "shadow": "#000000"
+      }
+    },
+    "typography": {
+      "display_large": {
+        "font_family": "inter_bold",
+        "font_weight": "bold",
+        "font_size": 57.0,
+        "line_height": 64.0,
+        "letter_spacing": -0.25
+      },
+      "display_medium": {
+        "font_family": "inter_bold",
+        "font_weight": "bold",
+        "font_size": 45.0,
+        "line_height": 52.0,
+        "letter_spacing": 0.0
+      },
+      "display_small": {
+        "font_family": "inter_bold",
+        "font_weight": "bold",
+        "font_size": 36.0,
+        "line_height": 44.0,
+        "letter_spacing": 0.0
+      },
+      "headline_large": {
+        "font_family": "inter_bold",
+        "font_weight": "bold",
+        "font_size": 32.0,
+        "line_height": 40.0,
+        "letter_spacing": 0.0
+      },
+      "headline_medium": {
+        "font_family": "inter_bold",
+        "font_weight": "bold",
+        "font_size": 28.0,
+        "line_height": 36.0,
+        "letter_spacing": 0.0
+      },
+      "headline_small": {
+        "font_family": "inter_bold",
+        "font_weight": "bold",
+        "font_size": 24.0,
+        "line_height": 32.0,
+        "letter_spacing": 0.0
+      },
+      "title_large": {
+        "font_family": "inter_regular",
+        "font_weight": "normal",
+        "font_size": 22.0,
+        "line_height": 28.0,
+        "letter_spacing": 0.0
+      },
+      "title_medium": {
+        "font_family": "inter_bold",
+        "font_weight": "bold",
+        "font_size": 16.0,
+        "line_height": 24.0,
+        "letter_spacing": 0.15
+      },
+      "title_small": {
+        "font_family": "inter_bold",
+        "font_weight": "bold",
+        "font_size": 14.0,
+        "line_height": 20.0,
+        "letter_spacing": 0.1
+      },
+      "body_large": {
+        "font_family": "inter_regular",
+        "font_weight": "normal",
+        "font_size": 16.0,
+        "line_height": 24.0,
+        "letter_spacing": 0.5
+      },
+      "body_medium": {
+        "font_family": "inter_regular",
+        "font_weight": "normal",
+        "font_size": 14.0,
+        "line_height": 20.0,
+        "letter_spacing": 0.25
+      },
+      "body_small": {
+        "font_family": "inter_regular",
+        "font_weight": "normal",
+        "font_size": 12.0,
+        "line_height": 16.0,
+        "letter_spacing": 0.4
+      },
+      "label_large": {
+        "font_family": "inter_bold",
+        "font_weight": "bold",
+        "font_size": 14.0,
+        "line_height": 20.0,
+        "letter_spacing": 0.1
+      },
+      "label_medium": {
+        "font_family": "inter_bold",
+        "font_weight": "bold",
+        "font_size": 12.0,
+        "line_height": 16.0,
+        "letter_spacing": 0.5
+      },
+      "label_small": {
+        "font_family": "inter_bold",
+        "font_weight": "bold",
+        "font_size": 11.0,
+        "line_height": 16.0,
+        "letter_spacing": 0.5
+      }
+    },
+    "border_radii": {
+      "none": 0.0,
+      "sm": 4.0,
+      "md": 8.0,
+      "lg": 16.0,
+      "xl": 24.0,
+      "full": 9999.0
+    },
+    "shadows": [
+      {
+        "name": "elevation_low",
+        "offset_x": 0.0,
+        "offset_y": 2.0,
+        "blur_radius": 4.0,
+        "spread_radius": 0.0,
+        "color": "#00000030"
+      },
+      {
+        "name": "elevation_high",
+        "offset_x": 0.0,
+        "offset_y": 8.0,
+        "blur_radius": 16.0,
+        "spread_radius": 0.0,
+        "color": "#00000060"
+      }
+    ],
+    "spacing": {
+      "none": 0.0,
+      "xs": 4.0,
+      "sm": 8.0,
+      "md": 16.0,
+      "lg": 24.0,
+      "xl": 32.0,
+      "xxl": 48.0
+    }
+  },
+  "root": {
+    "id": "root_layout",
+    "widget_type": "v_box",
+    "properties": {
+      "background_color": "#1A1C1E"
+    },
+    "layout": {
+      "container": {
+        "type": "flex",
+        "direction": "column",
+        "wrap": "no_wrap",
+        "justify_content": "flex_start",
+        "align_items": "stretch",
+        "gap": 0.0
+      },
+      "dimensions": {
+        "width": { "type": "fill", "value": 1.0 },
+        "height": { "type": "fill", "value": 1.0 }
+      }
+    },
+    "children": [
+      {
+        "id": "app_menu_bar",
+        "widget_type": "menu_bar",
+        "layout": {
+          "dimensions": {
+            "width": { "type": "fill", "value": 1.0 },
+            "height": { "type": "fixed", "value": 32.0 }
+          }
+        },
+        "children": [
+          {
+            "id": "menu_file",
+            "widget_type": "menu",
+            "properties": {
+              "text": "File"
+            },
+            "children": [
+              {
+                "id": "action_new_file",
+                "widget_type": "menu_item",
+                "properties": {
+                  "text": "New Project"
+                },
+                "events": {
+                  "on_click": {
+                    "handler_name": "on_new_project_click",
+                    "message": "NewProject"
+                  }
+                }
+              },
+              {
+                "id": "separator_file",
+                "widget_type": "menu_separator"
+              },
+              {
+                "id": "action_save_file",
+                "widget_type": "menu_item",
+                "properties": {
+                  "text": "Save"
+                },
+                "events": {
+                  "on_click": {
+                    "handler_name": "on_save_click",
+                    "message": "SaveDocument"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": "menu_edit",
+            "widget_type": "menu",
+            "properties": {
+              "text": "Edit"
+            },
+            "children": [
+              {
+                "id": "action_undo",
+                "widget_type": "menu_item",
+                "properties": {
+                  "text": "Undo"
+                },
+                "events": {
+                  "on_click": {
+                    "handler_name": "on_undo_click",
+                    "message": "Undo"
+                  }
+                }
+              },
+              {
+                "id": "action_redo",
+                "widget_type": "menu_item",
+                "properties": {
+                  "text": "Redo"
+                },
+                "events": {
+                  "on_click": {
+                    "handler_name": "on_redo_click",
+                    "message": "Redo"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "app_toolbar",
+        "widget_type": "h_box",
+        "properties": {
+          "background_color": "#253140",
+          "shadow_ref": "elevation_low"
+        },
+        "layout": {
+          "container": {
+            "type": "flex",
+            "direction": "row",
+            "wrap": "no_wrap",
+            "justify_content": "space_between",
+            "align_items": "center",
+            "gap": 12.0
+          },
+          "dimensions": {
+            "width": { "type": "fill", "value": 1.0 },
+            "height": { "type": "fixed", "value": 48.0 }
+          },
+          "spacing": {
+            "padding": { "top": 4.0, "right": 16.0, "bottom": 4.0, "left": 16.0 }
+          }
+        },
+        "children": [
+          {
+            "id": "toolbar_search_box",
+            "widget_type": "text_input",
+            "properties": {
+              "placeholder": "Search components or entities...",
+              "font_alias": "inter_regular",
+              "font_size": 13.0
+            },
+            "layout": {
+              "dimensions": {
+                "width": { "type": "fixed", "value": 280.0 },
+                "height": { "type": "fixed", "value": 32.0 }
+              }
+            },
+            "bindings": {
+              "value": "app_state.search_query"
+            },
+            "events": {
+              "on_change": {
+                "handler_name": "on_search_query_change",
+                "message": "SearchQueryChanged"
+              }
+            }
+          },
+          {
+            "id": "toolbar_actions_group",
+            "widget_type": "h_box",
+            "layout": {
+              "container": {
+                "type": "flex",
+                "direction": "row",
+                "wrap": "no_wrap",
+                "justify_content": "flex_end",
+                "align_items": "center",
+                "gap": 8.0
+              }
+            },
+            "children": [
+              {
+                "id": "btn_build_project",
+                "widget_type": "button",
+                "properties": {
+                  "text": "Build All",
+                  "font_alias": "inter_bold",
+                  "font_size": 13.0,
+                  "background_color": "#0061A4",
+                  "text_color": "#FFFFFF",
+                  "corner_radius": 6.0
+                },
+                "layout": {
+                  "dimensions": {
+                    "width": { "type": "hug_content" },
+                    "height": { "type": "fixed", "value": 32.0 }
+                  },
+                  "spacing": {
+                    "padding": { "top": 0.0, "right": 16.0, "bottom": 0.0, "left": 16.0 }
+                  }
+                },
+                "events": {
+                  "on_click": {
+                    "handler_name": "on_build_click",
+                    "message": "BuildTriggered"
+                  }
+                }
+              },
+              {
+                "id": "btn_settings",
+                "widget_type": "button",
+                "properties": {
+                  "text": "Settings",
+                  "font_alias": "inter_regular",
+                  "font_size": 13.0,
+                  "corner_radius": 6.0
+                },
+                "layout": {
+                  "dimensions": {
+                    "width": { "type": "hug_content" },
+                    "height": { "type": "fixed", "value": 32.0 }
+                  },
+                  "spacing": {
+                    "padding": { "top": 0.0, "right": 12.0, "bottom": 0.0, "left": 12.0 }
+                  }
+                },
+                "events": {
+                  "on_click": {
+                    "handler_name": "on_settings_click",
+                    "message": "OpenSettings"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "main_split_view",
+        "widget_type": "split_pane",
+        "layout": {
+          "dimensions": {
+            "width": { "type": "fill", "value": 1.0 },
+            "height": { "type": "fill", "value": 1.0 }
+          }
+        },
+        "children": [
+          {
+            "id": "left_sidebar_panel",
+            "widget_type": "v_box",
+            "properties": {
+              "background_color": "#1F2328"
+            },
+            "layout": {
+              "container": {
+                "type": "flex",
+                "direction": "column",
+                "wrap": "no_wrap",
+                "justify_content": "flex_start",
+                "align_items": "stretch",
+                "gap": 8.0
+              },
+              "dimensions": {
+                "width": { "type": "fixed", "value": 260.0 },
+                "height": { "type": "fill", "value": 1.0 }
+              },
+              "spacing": {
+                "padding": { "top": 12.0, "right": 12.0, "bottom": 12.0, "left": 12.0 }
+              }
+            },
+            "children": [
+              {
+                "id": "lbl_tree_header",
+                "widget_type": "label",
+                "properties": {
+                  "text": "PROJECT EXPLORER",
+                  "font_alias": "inter_bold",
+                  "font_size": 11.0,
+                  "text_color": "#8D9199"
+                }
+              },
+              {
+                "id": "project_tree_view",
+                "widget_type": "tree_view",
+                "layout": {
+                  "dimensions": {
+                    "width": { "type": "fill", "value": 1.0 },
+                    "height": { "type": "fill", "value": 1.0 }
+                  }
+                },
+                "bindings": {
+                  "items": "app_state.project_tree_nodes",
+                  "selected": "app_state.selected_tree_item"
+                },
+                "events": {
+                  "on_change": {
+                    "handler_name": "on_tree_selection_change",
+                    "message": "TreeSelectionChanged"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": "center_editor_tabs",
+            "widget_type": "tab_pane",
+            "layout": {
+              "dimensions": {
+                "width": { "type": "fill", "value": 1.0 },
+                "height": { "type": "fill", "value": 1.0 }
+              }
+            },
+            "children": [
+              {
+                "id": "tab_data_table",
+                "widget_type": "table_view",
+                "properties": {
+                  "columns": [
+                    { "id": "col_id", "title": "ID", "width": 80.0, "field": "id" },
+                    { "id": "col_name", "title": "Widget Name", "width": 200.0, "field": "name" },
+                    { "id": "col_type", "title": "Category", "width": 140.0, "field": "type" },
+                    { "id": "col_status", "title": "Validation Status", "width": 120.0, "field": "status" }
+                  ]
+                },
+                "layout": {
+                  "dimensions": {
+                    "width": { "type": "fill", "value": 1.0 },
+                    "height": { "type": "fill", "value": 1.0 }
+                  }
+                },
+                "bindings": {
+                  "items": "app_state.widgets_catalog",
+                  "selected": "app_state.selected_widget"
+                }
+              },
+              {
+                "id": "tab_analytics_chart",
+                "widget_type": "line_chart",
+                "properties": {
+                  "opacity": 1.0
+                },
+                "layout": {
+                  "dimensions": {
+                    "width": { "type": "fill", "value": 1.0 },
+                    "height": { "type": "fill", "value": 1.0 }
+                  }
+                },
+                "bindings": {
+                  "items": "app_state.performance_metrics"
+                }
+              },
+              {
+                "id": "tab_properties_form",
+                "widget_type": "v_box",
+                "layout": {
+                  "container": {
+                    "type": "flex",
+                    "direction": "column",
+                    "wrap": "no_wrap",
+                    "justify_content": "flex_start",
+                    "align_items": "stretch",
+                    "gap": 16.0
+                  },
+                  "dimensions": {
+                    "width": { "type": "fill", "value": 1.0 },
+                    "height": { "type": "fill", "value": 1.0 }
+                  },
+                  "spacing": {
+                    "padding": { "top": 24.0, "right": 24.0, "bottom": 24.0, "left": 24.0 }
+                  }
+                },
+                "children": [
+                  {
+                    "id": "form_title_label",
+                    "widget_type": "label",
+                    "properties": {
+                      "text": "Component Configuration",
+                      "font_alias": "inter_bold",
+                      "font_size": 20.0
+                    }
+                  },
+                  {
+                    "id": "input_component_name",
+                    "widget_type": "text_input",
+                    "properties": {
+                      "placeholder": "Enter component identifier",
+                      "font_alias": "inter_regular",
+                      "font_size": 14.0
+                    },
+                    "bindings": {
+                      "value": "app_state.editing_component_name"
+                    }
+                  },
+                  {
+                    "id": "chk_is_visible",
+                    "widget_type": "checkbox",
+                    "properties": {
+                      "text": "Component is visible by default",
+                      "checked": true
+                    },
+                    "bindings": {
+                      "value": "app_state.editing_component_visible"
+                    }
+                  },
+                  {
+                    "id": "slider_opacity",
+                    "widget_type": "slider",
+                    "properties": {
+                      "min_value": 0.0,
+                      "max_value": 100.0,
+                      "step_value": 1.0,
+                      "current_value": 100.0
+                    },
+                    "bindings": {
+                      "value": "app_state.editing_component_opacity"
+                    }
+                  },
+                  {
+                    "id": "progress_compilation",
+                    "widget_type": "progress_bar",
+                    "properties": {
+                      "current_value": 0.75
+                    },
+                    "bindings": {
+                      "value": "app_state.compilation_progress"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "app_status_bar",
+        "widget_type": "h_box",
+        "properties": {
+          "background_color": "#101C2B"
+        },
+        "layout": {
+          "container": {
+            "type": "flex",
+            "direction": "row",
+            "wrap": "no_wrap",
+            "justify_content": "space_between",
+            "align_items": "center",
+            "gap": 8.0
+          },
+          "dimensions": {
+            "width": { "type": "fill", "value": 1.0 },
+            "height": { "type": "fixed", "value": 24.0 }
+          },
+          "spacing": {
+            "padding": { "top": 2.0, "right": 12.0, "bottom": 2.0, "left": 12.0 }
+          }
+        },
+        "children": [
+          {
+            "id": "lbl_status_message",
+            "widget_type": "label",
+            "properties": {
+              "text": "Ready",
+              "font_alias": "inter_regular",
+              "font_size": 11.0,
+              "text_color": "#BBC7DB"
+            },
+            "bindings": {
+              "value": "app_state.status_text"
+            }
+          },
+          {
+            "id": "lbl_framework_indicator",
+            "widget_type": "label",
+            "properties": {
+              "text": "Active Target: Iced",
+              "font_alias": "inter_regular",
+              "font_size": 11.0,
+              "text_color": "#9ECAFF"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+

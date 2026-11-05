@@ -1,0 +1,24 @@
+{
+  "name": "ruxel-studio",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT OR Apache-2.0",
+  "workspaces": [
+    "packages/extension",
+    "packages/webview",
+    "packages/shared-types"
+  ],
+  "scripts": {
+    "build": "npm --workspaces run build",
+    "test": "npm --workspace=ruxel-studio test",
+    "stage:release": "node scripts/stage-release.mjs",
+    "stage:local": "node scripts/stage-release.mjs --local",
+    "package": "node scripts/stage-release.mjs && cd packages/extension && npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^4.1.0",
+    "typescript": "^5.3.0"
+  }
+}

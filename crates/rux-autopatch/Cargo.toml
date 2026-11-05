@@ -1,0 +1,25 @@
+[package]
+name = "rux-autopatch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+test = false
+
+[[bin]]
+name = "rux-autopatch"
+path = "src/main.rs"
+test = false
+
+[dependencies]
+rux-ast = { path = "../rux-ast" }
+rux-codegen = { path = "../rux-codegen" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ureq = { version = "2.10", features = ["json"] }
+
+[[test]]
+name = "framework_sync_tests"
+path = "tests/autopatch_tests.rs"

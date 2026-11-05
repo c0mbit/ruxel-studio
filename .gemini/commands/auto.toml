@@ -1,0 +1,2 @@
+﻿description = "Execute the full automated development lifecycle (Design -> Code -> Tests -> Audit)."
+prompt = "Use the rules of the orchestrator agent. Run the full development cycle for the following task: {{args}}"

@@ -1,0 +1,20 @@
+[package]
+name = "rux-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "JSON-RPC daemon for Ruxel Studio IDE integration"
+
+[dependencies]
+rux-ast = { path = "../rux-ast" }
+rux-codegen = { path = "../rux-codegen" }
+rux-figma = { path = "../rux-figma" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+notify = { workspace = true }
+
+[[bin]]
+name = "rux-daemon"
+path = "src/main.rs"
+test = false
