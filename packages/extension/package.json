@@ -36,11 +36,7 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onCustomEditor:ruxel.ruxEditor",
-    "onCommand:ruxel.restartDaemon",
-    "onCommand:ruxel.validateCurrentDocument",
-    "onCommand:ruxel.formatCurrentDocument",
-    "onCommand:ruxel.generateCode"
+    "onCustomEditor:ruxel.ruxEditor"
   ],
   "contributes": {
     "customEditors": [

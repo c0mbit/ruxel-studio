@@ -25,10 +25,9 @@ export class RuxEditorProvider implements vscode.CustomTextEditorProvider {
             enableScripts: true,
             localResourceRoots: [
                 this.context.extensionUri,
+                vscode.Uri.joinPath(this.context.extensionUri, "webview-dist"),
                 vscode.Uri.joinPath(this.context.extensionUri, "dist"),
                 vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview"),
-                vscode.Uri.joinPath(this.context.extensionUri, "packages", "webview", "dist"),
-                vscode.Uri.joinPath(this.context.extensionUri, "packages", "webview"),
             ],
         };
 
@@ -57,30 +56,40 @@ export class RuxEditorProvider implements vscode.CustomTextEditorProvider {
     private getHtmlForWebview(webview: vscode.Webview): string {
         const nonce = crypto.randomBytes(16).toString("hex");
 
-        const candidatePaths = [
-            path.join(this.context.extensionPath, "dist", "webview"),
-            path.join(this.context.extensionPath, "packages", "webview", "dist"),
-            path.join(this.context.extensionPath, "..", "webview", "dist"),
-        ];
+        const webviewDistFolderUri = vscode.Uri.joinPath(this.context.extensionUri, "webview-dist");
+        const distWebviewFolderUri = vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview");
 
-        const webviewDistPath = candidatePaths.find((candidate) => fs.existsSync(candidate));
+        const webviewDistFs = path.join(this.context.extensionPath, "webview-dist");
+        const distWebviewFs = path.join(this.context.extensionPath, "dist", "webview");
+
+        let activeFolderUri = webviewDistFolderUri;
+        let activeFsPath = webviewDistFs;
+
+        if (!fs.existsSync(webviewDistFs) && fs.existsSync(distWebviewFs)) {
+            activeFolderUri = distWebviewFolderUri;
+            activeFsPath = distWebviewFs;
+        }
 
         let scriptUri: vscode.Uri;
         let styleUri: vscode.Uri | null = null;
 
-        if (webviewDistPath) {
-            const files = fs.readdirSync(webviewDistPath);
+        if (fs.existsSync(activeFsPath)) {
+            const files = fs.readdirSync(activeFsPath);
             const jsFile = files.find((f) => f.endsWith(".js")) ?? "index.js";
             const cssFile = files.find((f) => f.endsWith(".css"));
 
-            scriptUri = webview.asWebviewUri(vscode.Uri.file(path.join(webviewDistPath, jsFile)));
+            scriptUri = webview.asWebviewUri(
+                vscode.Uri.joinPath(activeFolderUri, jsFile)
+            );
 
             if (cssFile) {
-                styleUri = webview.asWebviewUri(vscode.Uri.file(path.join(webviewDistPath, cssFile)));
+                styleUri = webview.asWebviewUri(
+                    vscode.Uri.joinPath(activeFolderUri, cssFile)
+                );
             }
         } else {
             scriptUri = webview.asWebviewUri(
-                vscode.Uri.joinPath(this.context.extensionUri, "packages", "webview", "src", "main.tsx")
+                vscode.Uri.joinPath(activeFolderUri, "index.js")
             );
         }
 
@@ -91,7 +100,7 @@ export class RuxEditorProvider implements vscode.CustomTextEditorProvider {
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${cspSource}; connect-src ${cspSource} ws: http:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} vscode-webview-resource: https: data:; style-src ${cspSource} vscode-webview-resource: 'unsafe-inline'; script-src 'nonce-${nonce}' ${cspSource} vscode-webview-resource: 'unsafe-eval'; font-src ${cspSource} vscode-webview-resource: data:; connect-src ${cspSource} vscode-webview-resource: ws: wss: http: https:;">
     ${styleUri ? `<link rel="stylesheet" href="${styleUri}" />` : ""}
     <title>Ruxel Studio</title>
 </head>

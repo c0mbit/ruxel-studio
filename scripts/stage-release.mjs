@@ -78,10 +78,12 @@ console.log("Compiling @ruxel/extension...");
 runCommand("npm", ["run", "build"], extensionDir);
 
 const webviewDist = path.join(webviewDir, "dist");
-const stagedWebview = path.join(extensionDir, "dist", "webview");
+const stagedWebviewDist = path.join(extensionDir, "webview-dist");
+const stagedWebviewLegacy = path.join(extensionDir, "dist", "webview");
 if (fs.existsSync(webviewDist)) {
-    console.log(`Copying webview dist to ${stagedWebview}...`);
-    copyDirectoryRecursive(webviewDist, stagedWebview);
+    console.log(`Copying webview dist to ${stagedWebviewDist}...`);
+    copyDirectoryRecursive(webviewDist, stagedWebviewDist);
+    copyDirectoryRecursive(webviewDist, stagedWebviewLegacy);
 }
 
 const licenseFiles = ["LICENSE-MIT", "LICENSE-APACHE", "LICENSE.md"];
@@ -136,6 +138,7 @@ const requiredChecks = [
     path.join(extensionDir, "package.json"),
     path.join(extensionDir, "README.md"),
     path.join(extensionDir, "dist", "extension.js"),
+    path.join(extensionDir, "webview-dist", "index.html"),
     path.join(extensionDir, "dist", "webview", "index.html"),
     path.join(extensionDir, "assets", "icon.png"),
 ];

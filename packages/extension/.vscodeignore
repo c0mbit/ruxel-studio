@@ -52,6 +52,7 @@ rux_autopatch_test_*
 **/*.temp
 **
 !dist/**
+!webview-dist/**
 !bin/**
 !package.json
 !README.md
