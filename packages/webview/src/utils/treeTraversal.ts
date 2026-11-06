@@ -1,17 +1,18 @@
-import type {
-    AnimationDefinition,
-    AssetRegistry,
-    BreadcrumbItem,
-    ProjectMetadata,
-    RuxDocument,
-    ThemeConfig,
-    WidgetBindings,
-    WidgetEvents,
-    WidgetLayout,
-    WidgetNode,
-    WidgetProperties,
-    WidgetType,
-    WindowConfig,
+import {
+    type AnimationDefinition,
+    type AssetRegistry,
+    type BreadcrumbItem,
+    type ProjectMetadata,
+    type RuxDocument,
+    type ThemeConfig,
+    type WidgetBindings,
+    type WidgetEvents,
+    type WidgetLayout,
+    type WidgetNode,
+    type WidgetProperties,
+    type WidgetType,
+    type WindowConfig,
+    serializeRuxDocument,
 } from "@ruxel/shared-types";
 
 export function findNodeById(root: WidgetNode, id: string): WidgetNode | null {
@@ -305,10 +306,8 @@ export function normalizeWidgetNode(
     return {
         id,
         widget_type: widgetType,
-        type: widgetType,
         ...(slot !== undefined ? { slot } : {}),
         properties,
-        props: properties,
         ...(layout !== undefined ? { layout } : {}),
         ...(events !== undefined ? { events } : {}),
         ...(bindings !== undefined ? { bindings } : {}),
@@ -339,9 +338,7 @@ export function normalizeRuxDocument(
     const metadata: ProjectMetadata = {
         schema_version: schemaVersion,
         app_name: appName,
-        name: appName,
         app_version: appVersion,
-        version: appVersion,
         target_frameworks: targetFrameworks as readonly (
             | "iced"
             | "egui"
@@ -357,7 +354,6 @@ export function normalizeRuxDocument(
             ? { authors: rawMeta.authors as readonly string[] }
             : rawMeta.author
               ? {
-                    author: String(rawMeta.author),
                     authors: [String(rawMeta.author)],
                 }
               : {}),
@@ -499,9 +495,7 @@ export function normalizeRuxDocument(
         root = {
             id: "root",
             widget_type: "v_box",
-            type: "v_box",
             properties: {},
-            props: {},
             children: [],
         };
     }
@@ -515,9 +509,6 @@ export function normalizeRuxDocument(
         assets,
         theme,
         root,
-        type: root.widget_type,
-        props: root.properties,
-        children: root.children,
     };
 }
 
@@ -540,6 +531,9 @@ export function safeParseJson(text: string): {
 export function formatJson(text: string): string {
     try {
         const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === "object") {
+            return serializeRuxDocument(parsed as Record<string, unknown>);
+        }
         return JSON.stringify(parsed, null, 2);
     } catch {
         return text;

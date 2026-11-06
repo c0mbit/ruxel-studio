@@ -1,5 +1,9 @@
 import { useCallback } from "react";
-import type { RuxDocument, WidgetNode } from "@ruxel/shared-types";
+import {
+    type RuxDocument,
+    type WidgetNode,
+    serializeRuxDocument,
+} from "@ruxel/shared-types";
 import { DocumentMutationCommand } from "../history/types";
 import { useEditorStore } from "../state/editorStore";
 import { useHistoryStore } from "../state/historyStore";
@@ -30,7 +34,7 @@ export function useDocumentMutation(
             const updatedDoc = mutator(currentDoc);
 
             const applyDoc = (docToApply: RuxDocument, summary: string) => {
-                const updatedJson = JSON.stringify(docToApply, null, 2);
+                const updatedJson = serializeRuxDocument(docToApply);
                 useEditorStore.getState().setRawText(updatedJson);
                 onDocumentChange?.(updatedJson, summary);
             };

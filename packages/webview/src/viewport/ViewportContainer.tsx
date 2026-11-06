@@ -1,5 +1,10 @@
 import { FC, useEffect, useRef, useState } from "react";
-import type { RuxDocument, WidgetNode, WidgetType } from "@ruxel/shared-types";
+import {
+    type RuxDocument,
+    type WidgetNode,
+    type WidgetType,
+    serializeRuxDocument,
+} from "@ruxel/shared-types";
 import { DocumentMutationCommand } from "../history/types";
 import { useCrdtStore } from "../state/crdtStore";
 import { useEditorStore } from "../state/editorStore";
@@ -373,7 +378,7 @@ export const ViewportContainer: FC<ViewportContainerProps> = ({
                         : `Resize ${nodeId}`;
 
                 const applyDoc = (docToApply: RuxDocument, summary: string) => {
-                    const updatedJson = JSON.stringify(docToApply, null, 2);
+                    const updatedJson = serializeRuxDocument(docToApply);
                     setRawText(updatedJson);
                     if (onDocumentChange) {
                         onDocumentChange(updatedJson, summary);
@@ -571,7 +576,7 @@ export const ViewportContainer: FC<ViewportContainerProps> = ({
         };
 
         const applyDoc = (docToApply: RuxDocument, summary: string) => {
-            const updatedJson = JSON.stringify(docToApply, null, 2);
+            const updatedJson = serializeRuxDocument(docToApply);
             setRawText(updatedJson);
             if (onDocumentChange) {
                 onDocumentChange(updatedJson, summary);
@@ -791,7 +796,7 @@ export const ViewportContainer: FC<ViewportContainerProps> = ({
                             setIsNativePreview(next);
                             if (next) {
                                 sendCompileWasm(
-                                    JSON.stringify(document, null, 2),
+                                    serializeRuxDocument(document),
                                     targetFramework
                                 );
                             }

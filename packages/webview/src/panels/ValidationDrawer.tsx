@@ -1,5 +1,9 @@
 import React, { FC } from "react";
-import { createDefaultStarterDocument, type DaemonValidationError } from "@ruxel/shared-types";
+import {
+    createDefaultStarterDocument,
+    serializeRuxDocument,
+    type DaemonValidationError,
+} from "@ruxel/shared-types";
 import { useEditorStore } from "../state/editorStore";
 import { useExtensionIpc } from "../hooks/useExtensionIpc";
 
@@ -19,7 +23,7 @@ export const ValidationDrawer: FC = () => {
 
     const handleReset = () => {
         const starter = createDefaultStarterDocument();
-        const starterText = JSON.stringify(starter, null, 2);
+        const starterText = serializeRuxDocument(starter);
         setInitialDocument(starterText, starter, true, false);
         sendDocumentChange(starterText, "Reset to default template");
         setIsOpen(false);

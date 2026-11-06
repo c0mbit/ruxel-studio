@@ -1,13 +1,24 @@
 import { useCallback, useEffect } from "react";
-import type {
-    ExtensionToWebviewMessage,
-    TargetFramework,
-    TargetLanguage,
-    ViewMode,
-    WebviewToExtensionMessage,
+import {
+    type ExtensionToWebviewMessage,
+    type TargetFramework,
+    type TargetLanguage,
+    type ViewMode,
+    type WebviewToExtensionMessage,
+    serializeRuxDocument,
 } from "@ruxel/shared-types";
 import { useEditorStore } from "../state/editorStore";
 import { vscodeApi } from "../vscode";
+
+function cleanPayloadText(rawText: string): string {
+    try {
+        const parsed = JSON.parse(rawText);
+        if (parsed && typeof parsed === "object") {
+            return serializeRuxDocument(parsed as Record<string, unknown>);
+        }
+    } catch {}
+    return rawText;
+}
 
 export function useExtensionIpc() {
     const setInitialDocument = useEditorStore((state) => state.setInitialDocument);
@@ -151,7 +162,7 @@ export function useExtensionIpc() {
         (rawText: string, summary?: string) => {
             postMessage({
                 type: "DOCUMENT_CHANGE",
-                rawText,
+                rawText: cleanPayloadText(rawText),
                 summary,
             });
         },
@@ -172,7 +183,7 @@ export function useExtensionIpc() {
         (rawText: string) => {
             postMessage({
                 type: "VALIDATE_REQUEST",
-                rawText,
+                rawText: cleanPayloadText(rawText),
             });
         },
         [postMessage]
@@ -192,7 +203,7 @@ export function useExtensionIpc() {
         const textToSave = rawText ?? useEditorStore.getState().rawText;
         postMessage({
             type: "REQUEST_SAVE",
-            rawText: textToSave,
+            rawText: cleanPayloadText(textToSave),
         });
     }, [postMessage]);
 
@@ -206,7 +217,7 @@ export function useExtensionIpc() {
             setIsGeneratingCode(true);
             postMessage({
                 type: "GENERATE_CODE_REQUEST",
-                rawText,
+                rawText: cleanPayloadText(rawText),
                 existingController,
                 targetLanguage,
                 targetFramework,
@@ -224,7 +235,7 @@ export function useExtensionIpc() {
         ) => {
             postMessage({
                 type: "EXPORT_CODE_TO_DISK",
-                rawText,
+                rawText: cleanPayloadText(rawText),
                 outputDir,
                 targetLanguage,
                 targetFramework,
@@ -266,7 +277,7 @@ export function useExtensionIpc() {
             setWasmError(null);
             postMessage({
                 type: "COMPILE_WASM_REQUEST",
-                rawText,
+                rawText: cleanPayloadText(rawText),
                 targetFramework,
             });
         },

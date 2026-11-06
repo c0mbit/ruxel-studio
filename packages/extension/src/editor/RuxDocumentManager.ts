@@ -12,6 +12,7 @@ import {
     type WebviewToExtensionMessage,
     createDefaultStarterDocument,
     parseRuxDocument,
+    serializeRuxDocument,
 } from "@ruxel/shared-types";
 import type { DaemonClient } from "../daemon/DaemonClient";
 
@@ -134,7 +135,14 @@ export class RuxDocumentManager implements vscode.Disposable {
 
     private async handleRequestSave(rawText?: string): Promise<void> {
         if (rawText) {
-            await this.applyWebviewDocumentChange(rawText, "Save Document");
+            let textToSave = rawText;
+            try {
+                const parsed = JSON.parse(rawText);
+                if (parsed && typeof parsed === "object") {
+                    textToSave = serializeRuxDocument(parsed as Record<string, unknown>);
+                }
+            } catch {}
+            await this.applyWebviewDocumentChange(textToSave, "Save Document");
         }
         const saved = await this.document.save();
         this.postMessage({
@@ -149,7 +157,7 @@ export class RuxDocumentManager implements vscode.Disposable {
 
         if (rawText.trim().length === 0) {
             parsedDoc = createDefaultStarterDocument(this.document.fileName);
-            rawText = JSON.stringify(parsedDoc, null, 2);
+            rawText = serializeRuxDocument(parsedDoc);
             this.lastSentText = rawText;
 
             const entireRange = new vscode.Range(

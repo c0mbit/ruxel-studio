@@ -13,6 +13,7 @@ import {
     type TargetLanguage,
     type ViewMode,
     createDefaultStarterDocument,
+    serializeRuxDocument,
 } from "@ruxel/shared-types";
 import { findNodePath, safeParseJson } from "../utils/treeTraversal";
 import { sharedCrdtBridge, sharedCrdtClient } from "./crdtStore";
@@ -150,7 +151,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         let textToUse = rawText;
         if (!parsed && rawText.trim().length === 0) {
             parsed = createDefaultStarterDocument();
-            textToUse = JSON.stringify(parsed, null, 2);
+            textToUse = serializeRuxDocument(parsed);
         }
         const selectedId = get().selectedNodeId;
         const breadcrumbs =
@@ -377,7 +378,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     },
 
     applyImportedFigmaDocument: (doc) => {
-        const rawText = JSON.stringify(doc, null, 2);
+        const rawText = serializeRuxDocument(doc);
         sharedCrdtBridge.syncFromLocalDocument(doc);
         set({
             document: doc,
@@ -415,7 +416,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 }));
 
 sharedCrdtBridge.setOnRemoteUpdate((remoteDoc) => {
-    const rawText = JSON.stringify(remoteDoc, null, 2);
+    const rawText = serializeRuxDocument(remoteDoc);
     const selectedId = useEditorStore.getState().selectedNodeId;
     const breadcrumbs =
         selectedId

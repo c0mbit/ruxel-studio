@@ -50,9 +50,7 @@ export function parseRuxDocument(rawJson: string): RuxDocument | null {
         const metadata: ProjectMetadata = {
             schema_version: schemaVersion,
             app_name: appName,
-            name: appName,
             app_version: appVersion,
-            version: appVersion,
             target_frameworks: targetFrameworks as readonly (
                 | "iced"
                 | "egui"
@@ -68,7 +66,6 @@ export function parseRuxDocument(rawJson: string): RuxDocument | null {
                 ? { authors: rawMeta.authors as readonly string[] }
                 : rawMeta.author
                   ? {
-                        author: String(rawMeta.author),
                         authors: [String(rawMeta.author)],
                     }
                   : {}),
@@ -307,9 +304,7 @@ export function parseRuxDocument(rawJson: string): RuxDocument | null {
         const root: WidgetNode = {
             id: typeof rawRoot.id === "string" ? rawRoot.id : "root",
             widget_type: rootWidgetType,
-            type: rootWidgetType,
             properties: rootProps,
-            props: rootProps,
             children: rootChildren,
         };
 
@@ -323,9 +318,6 @@ export function parseRuxDocument(rawJson: string): RuxDocument | null {
             assets,
             theme,
             root,
-            type: root.widget_type,
-            props: root.properties,
-            children: root.children,
         };
     } catch {
         return null;
@@ -345,9 +337,7 @@ export function createDefaultStarterDocument(fileName?: string): RuxDocument {
         metadata: {
             schema_version: "1.0.0",
             app_name: appName,
-            name: appName,
             app_version: "0.1.0",
-            version: "0.1.0",
             target_frameworks: ["iced", "egui", "slint", "dioxus", "fyne", "flet"],
             description: "Starter UI document created with Ruxel Studio",
             authors: ["Developer"],
@@ -474,7 +464,6 @@ export function createDefaultStarterDocument(fileName?: string): RuxDocument {
         root: {
             id: "root",
             widget_type: "v_box",
-            type: "v_box",
             properties: {
                 background_color: "#09090b",
             },
@@ -497,7 +486,6 @@ export function createDefaultStarterDocument(fileName?: string): RuxDocument {
                 {
                     id: "welcome_title",
                     widget_type: "label",
-                    type: "label",
                     properties: {
                         text: "Welcome to Ruxel Studio",
                         font_size: 24,
@@ -511,7 +499,6 @@ export function createDefaultStarterDocument(fileName?: string): RuxDocument {
                 {
                     id: "welcome_subtitle",
                     widget_type: "label",
-                    type: "label",
                     properties: {
                         text: "Drag widgets from the palette or start designing",
                         font_size: 14,
@@ -524,7 +511,6 @@ export function createDefaultStarterDocument(fileName?: string): RuxDocument {
                 {
                     id: "action_button",
                     widget_type: "button",
-                    type: "button",
                     properties: {
                         text: "Get Started",
                     },
@@ -540,4 +526,130 @@ export function createDefaultStarterDocument(fileName?: string): RuxDocument {
             ],
         },
     };
+}
+
+export function cleanWidgetNodeForSerialization(
+    node: WidgetNode | Record<string, unknown>
+): WidgetNode {
+    const raw = { ...node } as Record<string, unknown>;
+    const widgetType = (raw.widget_type ?? raw.type ?? "v_box") as WidgetType;
+    const properties = (raw.properties ?? raw.props ?? {}) as WidgetProperties;
+
+    delete raw.type;
+    delete raw.props;
+
+    const cleaned: WidgetNode = {
+        id: typeof raw.id === "string" ? raw.id : "root",
+        widget_type: widgetType,
+        ...(typeof raw.slot === "string" ? { slot: raw.slot } : {}),
+        properties,
+        ...(raw.layout && typeof raw.layout === "object"
+            ? { layout: raw.layout as WidgetNode["layout"] }
+            : {}),
+        ...(raw.events && typeof raw.events === "object"
+            ? { events: raw.events as WidgetNode["events"] }
+            : {}),
+        ...(raw.bindings && typeof raw.bindings === "object"
+            ? { bindings: raw.bindings as WidgetNode["bindings"] }
+            : {}),
+        ...(Array.isArray(raw.animations)
+            ? { animations: raw.animations as WidgetNode["animations"] }
+            : {}),
+        ...(Array.isArray(raw.children)
+            ? {
+                  children: (raw.children as (WidgetNode | Record<string, unknown>)[]).map(
+                      (c) => cleanWidgetNodeForSerialization(c)
+                  ),
+              }
+            : {}),
+    };
+
+    return cleaned;
+}
+
+export function cleanDocumentForSerialization(
+    doc: RuxDocument | Record<string, unknown>
+): RuxDocument {
+    const raw = { ...doc } as Record<string, unknown>;
+    delete raw.type;
+    delete raw.props;
+    delete raw.children;
+
+    const rawMeta = (
+        raw.metadata && typeof raw.metadata === "object"
+            ? raw.metadata
+            : {}
+    ) as Record<string, unknown>;
+    const appName = String(rawMeta.app_name ?? rawMeta.name ?? "RuxelApp");
+    const appVersion = String(
+        raw.version ?? rawMeta.app_version ?? rawMeta.version ?? "0.1.0"
+    );
+    const schemaVersion = String(
+        raw.schema_version ?? rawMeta.schema_version ?? "1.0.0"
+    );
+    const authors = Array.isArray(rawMeta.authors)
+        ? (rawMeta.authors as readonly string[])
+        : rawMeta.author
+          ? [String(rawMeta.author)]
+          : [];
+
+    const metadata: ProjectMetadata = {
+        schema_version: schemaVersion,
+        app_name: appName,
+        app_version: appVersion,
+        target_frameworks: (Array.isArray(rawMeta.target_frameworks)
+            ? rawMeta.target_frameworks
+            : ["iced"]) as readonly (
+            | "iced"
+            | "egui"
+            | "slint"
+            | "dioxus"
+            | "fyne"
+            | "flet"
+        )[],
+        ...(rawMeta.description ? { description: String(rawMeta.description) } : {}),
+        ...(authors.length > 0 ? { authors } : {}),
+        ...(rawMeta.license ? { license: String(rawMeta.license) } : {}),
+        ...(rawMeta.created_at ? { created_at: String(rawMeta.created_at) } : {}),
+        ...(rawMeta.updated_at ? { updated_at: String(rawMeta.updated_at) } : {}),
+    };
+
+    const rootNode =
+        raw.root && typeof raw.root === "object"
+            ? (raw.root as WidgetNode)
+            : ({
+                  id: "root",
+                  widget_type: "v_box",
+                  properties: {},
+                  children: [],
+              } as WidgetNode);
+
+    const cleaned: RuxDocument = {
+        ...(typeof raw.$schema === "string" ? { $schema: raw.$schema } : {}),
+        schema_version: schemaVersion,
+        version: appVersion,
+        metadata,
+        window: (raw.window && typeof raw.window === "object"
+            ? raw.window
+            : {}) as WindowConfig,
+        assets: (raw.assets && typeof raw.assets === "object"
+            ? raw.assets
+            : { fonts: [], icons: [], images: [] }) as AssetRegistry,
+        ...(raw.i18n && typeof raw.i18n === "object"
+            ? { i18n: raw.i18n as I18nConfig }
+            : {}),
+        theme: (raw.theme && typeof raw.theme === "object"
+            ? raw.theme
+            : {}) as ThemeConfig,
+        root: cleanWidgetNodeForSerialization(rootNode),
+    };
+
+    return cleaned;
+}
+
+export function serializeRuxDocument(
+    doc: RuxDocument | Record<string, unknown>
+): string {
+    const cleaned = cleanDocumentForSerialization(doc);
+    return JSON.stringify(cleaned, null, 2);
 }

@@ -25,9 +25,20 @@ import type {
     DaemonWasmPreviewStatus,
     DaemonWatchParams,
     DaemonWatchResult,
+    serializeRuxDocument,
 } from "@ruxel/shared-types";
 import { resolveBinary } from "./BinaryResolver";
 import { JsonRpcConnection } from "./JsonRpcConnection";
+
+function sanitizeRuxContent(content: string): string {
+    try {
+        const parsed = JSON.parse(content);
+        if (parsed && typeof parsed === "object") {
+            return serializeRuxDocument(parsed as Record<string, unknown>);
+        }
+    } catch {}
+    return content;
+}
 
 export class DaemonClient implements vscode.Disposable {
     private process: child_process.ChildProcess | null = null;
@@ -193,7 +204,9 @@ export class DaemonClient implements vscode.Disposable {
 
         this.setStatus("validating");
         try {
-            const params: DaemonValidateParams = { content };
+            const params: DaemonValidateParams = {
+                content: sanitizeRuxContent(content),
+            };
             const result = await this.connection.sendRequest<
                 DaemonValidationResult,
                 DaemonValidateParams
@@ -220,7 +233,9 @@ export class DaemonClient implements vscode.Disposable {
             throw new Error("rux-daemon is not connected");
         }
 
-        const params: DaemonFormatParams = { content };
+        const params: DaemonFormatParams = {
+            content: sanitizeRuxContent(content),
+        };
         const result = await this.connection.sendRequest<
             { formatted: string },
             DaemonFormatParams
@@ -235,10 +250,14 @@ export class DaemonClient implements vscode.Disposable {
             throw new Error("rux-daemon is not connected");
         }
 
+        const sanitizedParams: DaemonCodegenParams = {
+            ...params,
+            rux_content: sanitizeRuxContent(params.rux_content),
+        };
         return this.connection.sendRequest<
             DaemonCodegenResult,
             DaemonCodegenParams
-        >("rux/codegen", params);
+        >("rux/codegen", sanitizedParams);
     }
 
     public async exportCode(
@@ -248,10 +267,14 @@ export class DaemonClient implements vscode.Disposable {
             throw new Error("rux-daemon is not connected");
         }
 
+        const sanitizedParams: DaemonExportCodeParams = {
+            ...params,
+            rux_content: sanitizeRuxContent(params.rux_content),
+        };
         return this.connection.sendRequest<
             DaemonExportCodeResult,
             DaemonExportCodeParams
-        >("rux/exportCode", params);
+        >("rux/exportCode", sanitizedParams);
     }
 
     public async watchTarget(
@@ -313,10 +336,14 @@ export class DaemonClient implements vscode.Disposable {
             throw new Error("rux-daemon is not connected");
         }
 
+        const sanitizedParams: DaemonCompileWasmParams = {
+            ...params,
+            rux_content: sanitizeRuxContent(params.rux_content),
+        };
         return this.connection.sendRequest<
             DaemonCompileWasmResult,
             DaemonCompileWasmParams
-        >("rux/compileWasm", params);
+        >("rux/compileWasm", sanitizedParams);
     }
 
     public async getWasmPreviewStatus(): Promise<DaemonWasmPreviewStatus> {

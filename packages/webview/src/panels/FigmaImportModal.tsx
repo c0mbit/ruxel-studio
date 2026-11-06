@@ -211,7 +211,6 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
             root: {
                 id: "figma_frame_root",
                 widget_type: "v_box",
-                type: "v_box",
                 properties: {
                     background_color: "#18181b",
                 },
@@ -230,7 +229,6 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
                     {
                         id: "nav_bar",
                         widget_type: "h_box",
-                        type: "h_box",
                         properties: {
                             background_color: "#27272a",
                         },
@@ -250,7 +248,6 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
                             {
                                 id: "brand_title",
                                 widget_type: "label",
-                                type: "label",
                                 properties: {
                                     text: "Figma Auto-Layout Frame",
                                     font_size: 20,
@@ -264,7 +261,6 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
                             {
                                 id: "action_nav_button",
                                 widget_type: "button",
-                                type: "button",
                                 properties: {
                                     text: "Design Action",
                                 },
@@ -282,7 +278,6 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
                     {
                         id: "content_card",
                         widget_type: "v_box",
-                        type: "v_box",
                         properties: {
                             background_color: "#27272a",
                         },
@@ -300,7 +295,6 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
                             {
                                 id: "card_heading",
                                 widget_type: "label",
-                                type: "label",
                                 properties: {
                                     text: "Converted Card Component",
                                     font_size: 16,
@@ -313,7 +307,6 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
                             {
                                 id: "card_input",
                                 widget_type: "text_input",
-                                type: "text_input",
                                 properties: {
                                     placeholder: "Enter project notes...",
                                 },

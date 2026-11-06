@@ -1,5 +1,8 @@
 import { FC, useState, useCallback, useRef } from "react";
-import { createDefaultStarterDocument } from "@ruxel/shared-types";
+import {
+    createDefaultStarterDocument,
+    serializeRuxDocument,
+} from "@ruxel/shared-types";
 import { useEditorStore } from "../state/editorStore";
 import { ViewportContainer } from "../viewport/ViewportContainer";
 import { ComponentPalette } from "../panels/ComponentPalette";
@@ -123,7 +126,7 @@ export const SceneBuilderView: FC<SceneBuilderViewProps> = ({
 
     const handleResetToDefault = useCallback(() => {
         const starter = createDefaultStarterDocument();
-        const json = JSON.stringify(starter, null, 2);
+        const json = serializeRuxDocument(starter);
         setRawText(json);
         onDocumentChange?.(json, "Reset to Default Template");
         setSelectedNodeId("root");
