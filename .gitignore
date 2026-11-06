@@ -45,9 +45,15 @@ sandbox/
 .idea/
 *.tsbuildinfo
 **/*.tsbuildinfo
+*.log
+**/*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+CHECKPOINT.md
+.gemini/
+**/.gemini/
 !bin/
 !**/bin/
 !**/bin/**
