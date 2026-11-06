@@ -36,7 +36,7 @@ jobs:
         run: cargo test --workspace
 
       - name: Verify TypeScript Workspace Builds
-        run: npm --workspaces run build
+        run: npm run build
 
   build-binaries:
     needs: test-suite
