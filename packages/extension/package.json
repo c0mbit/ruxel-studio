@@ -35,9 +35,6 @@
     "visual-editor"
   ],
   "main": "./dist/extension.js",
-  "activationEvents": [
-    "onCustomEditor:ruxel.ruxEditor"
-  ],
   "contributes": {
     "customEditors": [
       {

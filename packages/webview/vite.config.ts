@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 
 export default defineConfig({
+  base: "./",
   plugins: [react()],
   resolve: {
     alias: {
@@ -14,10 +15,9 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        entryFileNames: "index.js",
-        assetFileNames: "index.[ext]"
+        entryFileNames: "assets/index.js",
+        assetFileNames: "assets/[name].[ext]"
       }
     }
   }
 });
-
