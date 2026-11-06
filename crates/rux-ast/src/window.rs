@@ -14,10 +14,29 @@ impl Default for ScaleMode {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_window_title() -> String {
+    "Ruxel Studio Window".to_string()
+}
+
+fn default_window_width() -> f64 {
+    800.0
+}
+
+fn default_window_height() -> f64 {
+    600.0
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WindowConfig {
+    #[serde(default = "default_window_title")]
     pub title: String,
+    #[serde(default = "default_window_width")]
     pub initial_width: f64,
+    #[serde(default = "default_window_height")]
     pub initial_height: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_width: Option<f64>,
@@ -45,6 +64,24 @@ pub struct WindowConfig {
     pub position_y: Option<i32>,
 }
 
-fn default_true() -> bool {
-    true
+impl Default for WindowConfig {
+    fn default() -> Self {
+        Self {
+            title: default_window_title(),
+            initial_width: default_window_width(),
+            initial_height: default_window_height(),
+            min_width: None,
+            min_height: None,
+            max_width: None,
+            max_height: None,
+            resizable: true,
+            scale_mode: ScaleMode::default(),
+            transparent: false,
+            decorations: true,
+            always_on_top: false,
+            fullscreen: false,
+            position_x: None,
+            position_y: None,
+        }
+    }
 }

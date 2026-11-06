@@ -307,11 +307,13 @@ pub struct WidgetBindings {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WidgetNode {
+    #[serde(default = "default_node_id")]
     pub id: String,
+    #[serde(alias = "type")]
     pub widget_type: WidgetType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slot: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "props")]
     pub properties: WidgetProperties,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layout: Option<WidgetLayout>,
@@ -323,4 +325,24 @@ pub struct WidgetNode {
     pub animations: Vec<AnimationDefinition>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<WidgetNode>,
+}
+
+fn default_node_id() -> String {
+    "root".to_string()
+}
+
+impl Default for WidgetNode {
+    fn default() -> Self {
+        Self {
+            id: default_node_id(),
+            widget_type: WidgetType::VBox,
+            slot: None,
+            properties: WidgetProperties::default(),
+            layout: None,
+            events: WidgetEvents::default(),
+            bindings: WidgetBindings::default(),
+            animations: Vec::new(),
+            children: Vec::new(),
+        }
+    }
 }

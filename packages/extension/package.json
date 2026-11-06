@@ -82,7 +82,7 @@
             "null"
           ],
           "default": null,
-          "description": "Custom path to the rux-daemon executable binary."
+          "description": "Custom path to the rux-daemon executable binary. If null, uses bundled binary."
         },
         "ruxel.syncServerPath": {
           "type": [
@@ -91,6 +91,39 @@
           ],
           "default": null,
           "description": "Custom path to the rux-sync-server executable binary."
+        },
+        "ruxel.defaultFramework": {
+          "type": "string",
+          "enum": [
+            "iced",
+            "egui",
+            "slint",
+            "dioxus",
+            "fyne",
+            "flet"
+          ],
+          "default": "iced",
+          "description": "Default code generation target framework."
+        },
+        "ruxel.wasmAutocompile": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically compile background Wasm preview on layout changes."
+        },
+        "ruxel.collaboration.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable real-time CRDT multiplayer synchronization."
+        },
+        "ruxel.collaboration.serverUrl": {
+          "type": "string",
+          "default": "ws://127.0.0.1:4040",
+          "description": "WebSocket server endpoint for multiplayer rooms."
+        },
+        "ruxel.figma.defaultToken": {
+          "type": "string",
+          "default": "",
+          "description": "Optional default personal access token for Figma API imports."
         }
       }
     }

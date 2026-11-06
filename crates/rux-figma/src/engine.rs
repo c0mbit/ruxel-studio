@@ -148,6 +148,8 @@ impl FigmaEngine {
                 "https://raw.githubusercontent.com/ruxel-studio/ruxel-studio/main/schemas/rux-schema-v1.json"
                     .to_string(),
             ),
+            schema_version: Some("1.0.0".to_string()),
+            version: Some("0.1.0".to_string()),
             metadata: ProjectMetadata {
                 schema_version: "1.0.0".to_string(),
                 app_name: clean_title.clone(),

@@ -164,8 +164,10 @@ export interface WidgetBindings {
 export interface WidgetNode {
     readonly id: string;
     readonly widget_type: WidgetType;
+    readonly type?: WidgetType;
     readonly slot?: string;
     readonly properties?: WidgetProperties;
+    readonly props?: WidgetProperties;
     readonly layout?: WidgetLayout;
     readonly events?: WidgetEvents;
     readonly bindings?: WidgetBindings;

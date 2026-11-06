@@ -1,15 +1,16 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import type {
-    AstPatchedFromCodePayload,
-    DaemonStatus,
-    DaemonValidationResult,
-    ExtensionToWebviewMessage,
-    RuxDocument,
-    TargetFramework,
-    TargetLanguage,
-    WebviewToExtensionMessage,
+import {
+    type AstPatchedFromCodePayload,
+    type DaemonStatus,
+    type DaemonValidationResult,
+    type ExtensionToWebviewMessage,
+    type RuxDocument,
+    type TargetFramework,
+    type TargetLanguage,
+    type WebviewToExtensionMessage,
+    parseRuxDocument,
 } from "@ruxel/shared-types";
 import type { DaemonClient } from "../daemon/DaemonClient";
 
@@ -130,12 +131,7 @@ export class RuxDocumentManager implements vscode.Disposable {
     private sendInitialState(): void {
         const rawText = this.document.getText();
         this.lastSentText = rawText;
-        let parsedDoc: RuxDocument | null = null;
-        try {
-            parsedDoc = JSON.parse(rawText) as RuxDocument;
-        } catch {
-            parsedDoc = null;
-        }
+        const parsedDoc = parseRuxDocument(rawText);
 
         this.postMessage({
             type: "DOCUMENT_INIT",

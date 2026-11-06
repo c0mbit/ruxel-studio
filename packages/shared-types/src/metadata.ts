@@ -3,10 +3,13 @@ export type TargetFramework = "iced" | "egui" | "slint" | "dioxus" | "fyne" | "f
 export interface ProjectMetadata {
     readonly schema_version: string;
     readonly app_name: string;
+    readonly name?: string;
     readonly app_version: string;
+    readonly version?: string;
     readonly target_frameworks: readonly TargetFramework[];
     readonly description?: string;
     readonly authors?: readonly string[];
+    readonly author?: string | readonly string[];
     readonly license?: string;
     readonly created_at?: string;
     readonly updated_at?: string;

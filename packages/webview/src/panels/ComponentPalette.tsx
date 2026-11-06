@@ -3,7 +3,7 @@ import type { WidgetType, WidgetNode, TeamPreset } from "@ruxel/shared-types";
 import { useEditorStore } from "../state/editorStore";
 import { usePresetStore } from "../state/presetStore";
 import { useDocumentMutation } from "../hooks/useDocumentMutation";
-import { insertChild } from "../utils/treeTraversal";
+import { insertChild, findNodeById, findParentNode } from "../utils/treeTraversal";
 import {
     PALETTE_CATEGORIES,
     createDefaultWidgetNode,
@@ -71,14 +71,14 @@ export const ComponentPalette: FC<ComponentPaletteProps> = ({
             let targetParentId = document.root.id;
 
             if (selectedNodeId) {
-                const selectedNode = findNodeInTree(
+                const selectedNode = findNodeById(
                     document.root,
                     selectedNodeId
                 );
                 if (selectedNode && isContainerWidget(selectedNode.widget_type)) {
                     targetParentId = selectedNodeId;
                 } else if (selectedNodeId !== document.root.id) {
-                    const parentOfSelected = findParentInTree(
+                    const parentOfSelected = findParentNode(
                         document.root,
                         selectedNodeId
                     );
@@ -110,14 +110,14 @@ export const ComponentPalette: FC<ComponentPaletteProps> = ({
             let targetParentId = document.root.id;
 
             if (selectedNodeId) {
-                const selectedNode = findNodeInTree(
+                const selectedNode = findNodeById(
                     document.root,
                     selectedNodeId
                 );
                 if (selectedNode && isContainerWidget(selectedNode.widget_type)) {
                     targetParentId = selectedNodeId;
                 } else if (selectedNodeId !== document.root.id) {
-                    const parentOfSelected = findParentInTree(
+                    const parentOfSelected = findParentNode(
                         document.root,
                         selectedNodeId
                     );
@@ -454,40 +454,4 @@ function regenerateWidgetIds(
         id: newId,
         ...(children ? { children } : {}),
     };
-}
-
-function findNodeInTree(
-    root: import("@ruxel/shared-types").WidgetNode,
-    id: string
-): import("@ruxel/shared-types").WidgetNode | null {
-    if (root.id === id) {
-        return root;
-    }
-    if (root.children) {
-        for (const child of root.children) {
-            const found = findNodeInTree(child, id);
-            if (found) {
-                return found;
-            }
-        }
-    }
-    return null;
-}
-
-function findParentInTree(
-    root: import("@ruxel/shared-types").WidgetNode,
-    targetId: string
-): import("@ruxel/shared-types").WidgetNode | null {
-    if (root.children) {
-        for (const child of root.children) {
-            if (child.id === targetId) {
-                return root;
-            }
-            const found = findParentInTree(child, targetId);
-            if (found) {
-                return found;
-            }
-        }
-    }
-    return null;
 }

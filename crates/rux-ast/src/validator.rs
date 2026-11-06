@@ -102,7 +102,7 @@ impl DocumentValidator {
     }
 
     pub fn validate_json(&self, json_str: &str) -> Result<RuxDocument, Vec<ValidationError>> {
-        match serde_json::from_str::<RuxDocument>(json_str) {
+        match RuxDocument::from_json(json_str) {
             Ok(doc) => {
                 let mut errors = Vec::new();
                 self.validate_document_internal(&doc, &mut errors);
@@ -590,6 +590,8 @@ mod tests {
     fn make_valid_document(root: WidgetNode) -> RuxDocument {
         RuxDocument {
             schema_ref: Some("https://ruxel.dev/schemas/rux-document.schema.json".to_string()),
+            schema_version: Some("1.0.0".to_string()),
+            version: Some("0.1.0".to_string()),
             metadata: ProjectMetadata {
                 schema_version: "1.0.0".to_string(),
                 app_name: "TestApp".to_string(),
@@ -949,5 +951,42 @@ mod tests {
         let validator = DocumentValidator::new();
         let result = validator.validate_json(sample_rux);
         assert!(result.is_ok(), "Validation failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_root_alias_document_validation() {
+        let alias_json = r##"{
+            "schema_version": "1.0.0",
+            "version": "0.1.0",
+            "metadata": {
+                "name": "AliasApp",
+                "author": "Alice Developer"
+            },
+            "type": "v_box",
+            "props": {
+                "background_color": "#121212"
+            },
+            "children": [
+                {
+                    "id": "btn_alias",
+                    "type": "button",
+                    "props": {
+                        "text": "Click Me"
+                    }
+                }
+            ]
+        }"##;
+
+        let validator = DocumentValidator::new();
+        let result = validator.validate_json(alias_json);
+        assert!(result.is_ok(), "Validation failed for alias doc: {:?}", result.err());
+
+        let doc = result.unwrap();
+        assert_eq!(doc.metadata.app_name, "AliasApp");
+        assert_eq!(doc.metadata.authors, vec!["Alice Developer"]);
+        assert_eq!(doc.root.widget_type, WidgetType::VBox);
+        assert_eq!(doc.root.children.len(), 1);
+        assert_eq!(doc.root.children[0].widget_type, WidgetType::Button);
+        assert_eq!(doc.root.children[0].properties.text.as_deref(), Some("Click Me"));
     }
 }

@@ -5,7 +5,7 @@ import { useCrdtStore } from "../state/crdtStore";
 import { useEditorStore } from "../state/editorStore";
 import { useHistoryStore } from "../state/historyStore";
 import { useViewportStore } from "../state/viewportStore";
-import { findNodeById, insertChild } from "../utils/treeTraversal";
+import { findNodeById, insertChild, normalizeWidgetNode } from "../utils/treeTraversal";
 import {
     collectAllIds,
     createDefaultWidgetNode,
@@ -526,7 +526,7 @@ export const ViewportContainer: FC<ViewportContainerProps> = ({
             }
         } else if (presetJson) {
             try {
-                const parsedNode = JSON.parse(presetJson) as WidgetNode;
+                const parsedNode = normalizeWidgetNode(JSON.parse(presetJson) as Record<string, unknown>);
                 newNode = regenerateNodeIds(parsedNode, existingIds);
                 mutationDescription = `Insert Cloud Preset: ${newNode.id}`;
             } catch {
