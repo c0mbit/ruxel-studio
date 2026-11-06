@@ -1,4 +1,5 @@
 import { FC, useState, useMemo } from "react";
+import type { RuxDocument } from "@ruxel/shared-types";
 import { useEditorStore } from "../state/editorStore";
 
 interface FigmaImportModalProps {
@@ -14,6 +15,9 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
 }) => {
     const isImporting = useEditorStore((state) => state.isImportingFigma);
     const progress = useEditorStore((state) => state.figmaImportProgress);
+    const applyImportedFigmaDocument = useEditorStore(
+        (state) => state.applyImportedFigmaDocument
+    );
 
     const [figmaToken, setFigmaToken] = useState<string>("");
     const [figmaUrl, setFigmaUrl] = useState<string>("");
@@ -68,6 +72,263 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
         }
 
         onImport(figmaToken.trim(), figmaUrl.trim(), parsedInfo?.nodeId ?? undefined);
+    };
+
+    const handleLoadDemo = () => {
+        const demoDoc: RuxDocument = {
+            $schema: "https://ruxel.dev/schemas/rux-document.schema.json",
+            schema_version: "1.0.0",
+            version: "0.1.0",
+            metadata: {
+                schema_version: "1.0.0",
+                app_name: "FigmaImportedDashboard",
+                name: "FigmaImportedDashboard",
+                app_version: "0.1.0",
+                version: "0.1.0",
+                target_frameworks: ["iced", "egui", "slint", "dioxus", "fyne", "flet"],
+                description: "Figma frame converted to native AST",
+                authors: ["Figma Design"],
+                license: "MIT",
+            },
+            window: {
+                title: "Figma Converted Frame",
+                initial_width: 960,
+                initial_height: 640,
+                resizable: true,
+                scale_mode: "logical",
+                transparent: false,
+                decorations: true,
+                always_on_top: false,
+                fullscreen: false,
+            },
+            assets: {
+                fonts: [],
+                icons: [],
+                images: [],
+            },
+            theme: {
+                active_scheme: "dark",
+                color_palettes: {
+                    light: {
+                        primary: "#4f46e5",
+                        on_primary: "#ffffff",
+                        primary_container: "#e0e7ff",
+                        on_primary_container: "#1e1b4b",
+                        secondary: "#06b6d4",
+                        on_secondary: "#ffffff",
+                        secondary_container: "#cffafe",
+                        on_secondary_container: "#164e63",
+                        tertiary: "#ec4899",
+                        on_tertiary: "#ffffff",
+                        tertiary_container: "#fce7f3",
+                        on_tertiary_container: "#831843",
+                        error: "#ef4444",
+                        on_error: "#ffffff",
+                        error_container: "#fee2e2",
+                        on_error_container: "#7f1d1d",
+                        surface: "#f8fafc",
+                        on_surface: "#0f172a",
+                        surface_variant: "#e2e8f0",
+                        on_surface_variant: "#334155",
+                        outline: "#cbd5e1",
+                        outline_variant: "#94a3b8",
+                        background: "#ffffff",
+                        on_background: "#0f172a",
+                        inverse_surface: "#1e293b",
+                        inverse_on_surface: "#f8fafc",
+                        inverse_primary: "#818cf8",
+                        scrim: "#000000",
+                        shadow: "#000000",
+                    },
+                    dark: {
+                        primary: "#818cf8",
+                        on_primary: "#1e1b4b",
+                        primary_container: "#3730a3",
+                        on_primary_container: "#e0e7ff",
+                        secondary: "#22d3ee",
+                        on_secondary: "#164e63",
+                        secondary_container: "#155e75",
+                        on_secondary_container: "#cffafe",
+                        tertiary: "#f472b6",
+                        on_tertiary: "#831843",
+                        tertiary_container: "#9d174d",
+                        on_tertiary_container: "#fce7f3",
+                        error: "#f87171",
+                        on_error: "#7f1d1d",
+                        error_container: "#991b1b",
+                        on_error_container: "#fee2e2",
+                        surface: "#0f172a",
+                        on_surface: "#f8fafc",
+                        surface_variant: "#1e293b",
+                        on_surface_variant: "#94a3b8",
+                        outline: "#334155",
+                        outline_variant: "#475569",
+                        background: "#020617",
+                        on_background: "#f8fafc",
+                        inverse_surface: "#f8fafc",
+                        inverse_on_surface: "#0f172a",
+                        inverse_primary: "#4f46e5",
+                        scrim: "#000000",
+                        shadow: "#000000",
+                    },
+                },
+                typography: {
+                    display_large: { font_family: "system-ui", font_weight: "bold", font_size: 57, line_height: 64, letter_spacing: -0.25 },
+                    display_medium: { font_family: "system-ui", font_weight: "bold", font_size: 45, line_height: 52, letter_spacing: 0 },
+                    display_small: { font_family: "system-ui", font_weight: "bold", font_size: 36, line_height: 44, letter_spacing: 0 },
+                    headline_large: { font_family: "system-ui", font_weight: "normal", font_size: 32, line_height: 40, letter_spacing: 0 },
+                    headline_medium: { font_family: "system-ui", font_weight: "normal", font_size: 28, line_height: 36, letter_spacing: 0 },
+                    headline_small: { font_family: "system-ui", font_weight: "normal", font_size: 24, line_height: 32, letter_spacing: 0 },
+                    title_large: { font_family: "system-ui", font_weight: "normal", font_size: 22, line_height: 28, letter_spacing: 0 },
+                    title_medium: { font_family: "system-ui", font_weight: "medium", font_size: 16, line_height: 24, letter_spacing: 0.15 },
+                    title_small: { font_family: "system-ui", font_weight: "medium", font_size: 14, line_height: 20, letter_spacing: 0.1 },
+                    body_large: { font_family: "system-ui", font_weight: "normal", font_size: 16, line_height: 24, letter_spacing: 0.5 },
+                    body_medium: { font_family: "system-ui", font_weight: "normal", font_size: 14, line_height: 20, letter_spacing: 0.25 },
+                    body_small: { font_family: "system-ui", font_weight: "normal", font_size: 12, line_height: 16, letter_spacing: 0.4 },
+                    label_large: { font_family: "system-ui", font_weight: "medium", font_size: 14, line_height: 20, letter_spacing: 0.1 },
+                    label_medium: { font_family: "system-ui", font_weight: "medium", font_size: 12, line_height: 16, letter_spacing: 0.5 },
+                    label_small: { font_family: "system-ui", font_weight: "medium", font_size: 11, line_height: 16, letter_spacing: 0.5 },
+                },
+                border_radii: {
+                    none: 0,
+                    sm: 4,
+                    md: 8,
+                    lg: 12,
+                    xl: 16,
+                    full: 9999,
+                },
+                shadows: [],
+                spacing: {
+                    none: 0,
+                    xs: 4,
+                    sm: 8,
+                    md: 16,
+                    lg: 24,
+                    xl: 32,
+                    xxl: 48,
+                },
+            },
+            root: {
+                id: "figma_frame_root",
+                widget_type: "v_box",
+                type: "v_box",
+                properties: {
+                    background_color: "#18181b",
+                },
+                layout: {
+                    container: {
+                        type: "flex",
+                        direction: "column",
+                        align_items: "stretch",
+                        gap: 16,
+                    },
+                },
+                events: {},
+                bindings: {},
+                animations: [],
+                children: [
+                    {
+                        id: "nav_bar",
+                        widget_type: "h_box",
+                        type: "h_box",
+                        properties: {
+                            background_color: "#27272a",
+                        },
+                        layout: {
+                            container: {
+                                type: "flex",
+                                direction: "row",
+                                align_items: "center",
+                                justify_content: "space_between",
+                                gap: 12,
+                            },
+                        },
+                        events: {},
+                        bindings: {},
+                        animations: [],
+                        children: [
+                            {
+                                id: "brand_title",
+                                widget_type: "label",
+                                type: "label",
+                                properties: {
+                                    text: "Figma Auto-Layout Frame",
+                                    font_size: 20,
+                                    font_weight: "bold",
+                                },
+                                events: {},
+                                bindings: {},
+                                animations: [],
+                                children: [],
+                            },
+                            {
+                                id: "action_nav_button",
+                                widget_type: "button",
+                                type: "button",
+                                properties: {
+                                    text: "Design Action",
+                                },
+                                events: {
+                                    on_click: {
+                                        handler_name: "on_nav_action",
+                                    },
+                                },
+                                bindings: {},
+                                animations: [],
+                                children: [],
+                            },
+                        ],
+                    },
+                    {
+                        id: "content_card",
+                        widget_type: "v_box",
+                        type: "v_box",
+                        properties: {
+                            background_color: "#27272a",
+                        },
+                        layout: {
+                            container: {
+                                type: "flex",
+                                direction: "column",
+                                gap: 12,
+                            },
+                        },
+                        events: {},
+                        bindings: {},
+                        animations: [],
+                        children: [
+                            {
+                                id: "card_heading",
+                                widget_type: "label",
+                                type: "label",
+                                properties: {
+                                    text: "Converted Card Component",
+                                    font_size: 16,
+                                },
+                                events: {},
+                                bindings: {},
+                                animations: [],
+                                children: [],
+                            },
+                            {
+                                id: "card_input",
+                                widget_type: "text_input",
+                                type: "text_input",
+                                properties: {
+                                    placeholder: "Enter project notes...",
+                                },
+                                events: {},
+                                bindings: {},
+                                animations: [],
+                                children: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+        };
+        applyImportedFigmaDocument(demoDoc);
+        onClose();
     };
 
     if (!isOpen) {
@@ -199,33 +460,43 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
                     )}
                 </div>
 
-                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-800 bg-zinc-900/50">
+                <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-zinc-800 bg-zinc-900/50">
                     <button
                         type="button"
-                        onClick={onClose}
+                        onClick={handleLoadDemo}
                         disabled={isImporting}
-                        className="px-4 py-2 rounded-lg text-xs font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 transition disabled:opacity-50"
+                        className="px-3.5 py-2 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition disabled:opacity-50"
                     >
-                        Cancel
+                        Load Demo Figma Frame (Offline)
                     </button>
-                    <button
-                        type="button"
-                        onClick={handleSubmit}
-                        disabled={isImporting || !figmaToken.trim() || !figmaUrl.trim()}
-                        className="px-5 py-2 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition disabled:opacity-40 disabled:hover:bg-indigo-600 flex items-center gap-2 shadow-lg shadow-indigo-600/20"
-                    >
-                        {isImporting ? (
-                            <>
-                                <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                </svg>
-                                Importing...
-                            </>
-                        ) : (
-                            "Import Frame"
-                        )}
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={isImporting}
+                            className="px-4 py-2 rounded-lg text-xs font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 transition disabled:opacity-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleSubmit}
+                            disabled={isImporting || !figmaToken.trim() || !figmaUrl.trim()}
+                            className="px-5 py-2 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition disabled:opacity-40 disabled:hover:bg-indigo-600 flex items-center gap-2 shadow-lg shadow-indigo-600/20"
+                        >
+                            {isImporting ? (
+                                <>
+                                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                    </svg>
+                                    Importing...
+                                </>
+                            ) : (
+                                "Import Frame"
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

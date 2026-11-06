@@ -355,17 +355,25 @@ export const ComponentPalette: FC<ComponentPaletteProps> = ({
                                                 onDragStart={(e) =>
                                                     handleDragStart(e, widgetType)
                                                 }
+                                                onClick={() =>
+                                                    insertWidgetIntoDocument(widgetType)
+                                                }
                                                 onDoubleClick={() =>
                                                     insertWidgetIntoDocument(widgetType)
                                                 }
-                                                className="w-full flex items-center gap-2 px-2.5 py-1 rounded text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-grab active:cursor-grabbing transition-colors"
-                                                title={`Drag or double-click to insert ${getWidgetTypeLabel(widgetType)}`}
+                                                className="w-full flex items-center justify-between px-2.5 py-1 rounded text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer group transition-colors"
+                                                title={`Click to insert ${getWidgetTypeLabel(widgetType)} into selected container, or drag onto canvas`}
                                             >
-                                                <span className="w-4 text-center text-sm leading-none">
-                                                    {getWidgetTypeIcon(widgetType)}
-                                                </span>
-                                                <span className="truncate">
-                                                    {getWidgetTypeLabel(widgetType)}
+                                                <div className="flex items-center gap-2 truncate">
+                                                    <span className="w-4 text-center text-sm leading-none">
+                                                        {getWidgetTypeIcon(widgetType)}
+                                                    </span>
+                                                    <span className="truncate">
+                                                        {getWidgetTypeLabel(widgetType)}
+                                                    </span>
+                                                </div>
+                                                <span className="opacity-0 group-hover:opacity-100 text-[10px] text-blue-400 font-bold px-1 rounded bg-zinc-900 border border-zinc-700">
+                                                    +
                                                 </span>
                                             </button>
                                         ))}

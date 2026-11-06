@@ -188,9 +188,11 @@ export function useExtensionIpc() {
         [postMessage]
     );
 
-    const sendRequestSave = useCallback(() => {
+    const sendRequestSave = useCallback((rawText?: string) => {
+        const textToSave = rawText ?? useEditorStore.getState().rawText;
         postMessage({
             type: "REQUEST_SAVE",
+            rawText: textToSave,
         });
     }, [postMessage]);
 

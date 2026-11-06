@@ -51,10 +51,10 @@ export const TextViewer: FC<TextViewerProps> = ({
     const { sendGenerateCode, sendExportCode } = useExtensionIpc();
 
     const [localText, setLocalText] = useState<string>(rawText);
-    const [lineCount, setLineCount] = useState<number>(1);
     const [showErrorsDrawer, setShowErrorsDrawer] = useState<boolean>(true);
     const [showCodeDrawer, setShowCodeDrawer] = useState<boolean>(false);
     const [activeFileTab, setActiveFileTab] = useState<string>("ui_generated");
+    const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const lineNumbersRef = useRef<HTMLDivElement>(null);
@@ -66,16 +66,25 @@ export const TextViewer: FC<TextViewerProps> = ({
 
     useEffect(() => {
         setLocalText(rawText);
-        const lines = rawText.split("\n").length;
-        setLineCount(Math.max(1, lines));
     }, [rawText]);
+
+    useEffect(() => {
+        if (!feedbackMessage) {
+            return;
+        }
+        const timer = setTimeout(() => {
+            setFeedbackMessage(null);
+        }, 3000);
+        return () => clearTimeout(timer);
+    }, [feedbackMessage]);
+
+    const lines = useMemo(() => localText.split(/\r?\n/), [localText]);
+    const lineCount = Math.max(1, lines.length);
 
     const handleTextChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
         const nextText = e.target.value;
         setLocalText(nextText);
         setRawText(nextText);
-        const lines = nextText.split("\n").length;
-        setLineCount(Math.max(1, lines));
         onDocumentChange(nextText, "Edit Raw JSON");
     };
 
@@ -89,23 +98,32 @@ export const TextViewer: FC<TextViewerProps> = ({
         const formatted = formatJson(localText);
         setLocalText(formatted);
         setRawText(formatted);
-        const lines = formatted.split("\n").length;
-        setLineCount(Math.max(1, lines));
         onDocumentChange(formatted, "Format Document");
         onValidateRequest(formatted);
+        setFeedbackMessage("Formatted .rux JSON");
     };
 
     const handleValidate = () => {
         onValidateRequest(localText);
+        setFeedbackMessage("Validated .rux document");
     };
 
     const handleGenerate = () => {
         setShowCodeDrawer(true);
         sendGenerateCode(localText, undefined, currentFramework.language, targetFramework);
+        setFeedbackMessage(`Generated ${currentFramework.label} code`);
     };
 
     const handleExport = () => {
         sendExportCode(localText, undefined, currentFramework.language, targetFramework);
+        setFeedbackMessage(`Exporting ${targetFramework} code to workspace`);
+    };
+
+    const handleSave = () => {
+        setRawText(localText);
+        onDocumentChange(localText, "Save Document");
+        onRequestSave();
+        setFeedbackMessage("Saved document to disk");
     };
 
     const errorCount = validationResult.errors.length;
@@ -148,8 +166,13 @@ export const TextViewer: FC<TextViewerProps> = ({
                         />
                     )}
                     <span className="text-zinc-500 text-[11px]">
-                        ({lineCount} lines)
+                        ({lineCount} {lineCount === 1 ? "line" : "lines"})
                     </span>
+                    {feedbackMessage && (
+                        <span className="px-2 py-0.5 rounded bg-blue-950/80 border border-blue-800/80 text-blue-300 text-[11px] font-sans">
+                            {feedbackMessage}
+                        </span>
+                    )}
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -241,7 +264,7 @@ export const TextViewer: FC<TextViewerProps> = ({
                     </button>
                     <button
                         type="button"
-                        onClick={onRequestSave}
+                        onClick={handleSave}
                         disabled={isReadOnly}
                         className="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors flex items-center gap-1 font-sans text-xs disabled:opacity-50"
                     >
@@ -266,10 +289,10 @@ export const TextViewer: FC<TextViewerProps> = ({
             <div className="flex-1 flex overflow-hidden relative">
                 <div
                     ref={lineNumbersRef}
-                    className="w-12 bg-zinc-900/60 border-r border-zinc-800 text-zinc-600 text-right pr-2 select-none overflow-hidden py-2"
+                    className="w-12 bg-zinc-900/60 border-r border-zinc-800 text-zinc-600 text-right pr-2 select-none overflow-hidden py-2 font-mono text-xs"
                 >
-                    {Array.from({ length: lineCount }, (_, i) => (
-                        <div key={i + 1} className="leading-6 text-xs">
+                    {lines.map((_, i) => (
+                        <div key={i + 1} className="leading-6">
                             {i + 1}
                         </div>
                     ))}

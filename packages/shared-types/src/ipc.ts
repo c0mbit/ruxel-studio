@@ -191,6 +191,10 @@ export type ExtensionToWebviewMessage =
           readonly result: DaemonFrameworkSyncStatusResult;
       }
     | {
+          readonly type: "SAVE_COMPLETE";
+          readonly success: boolean;
+      }
+    | {
           readonly type: "ERROR";
           readonly code: string;
           readonly message: string;
@@ -226,6 +230,7 @@ export type WebviewToExtensionMessage =
       }
     | {
           readonly type: "REQUEST_SAVE";
+          readonly rawText?: string;
       }
     | {
           readonly type: "GENERATE_CODE_REQUEST";

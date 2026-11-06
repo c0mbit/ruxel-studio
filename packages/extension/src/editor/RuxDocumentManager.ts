@@ -10,6 +10,7 @@ import {
     type TargetFramework,
     type TargetLanguage,
     type WebviewToExtensionMessage,
+    createDefaultStarterDocument,
     parseRuxDocument,
 } from "@ruxel/shared-types";
 import type { DaemonClient } from "../daemon/DaemonClient";
@@ -74,6 +75,8 @@ export class RuxDocumentManager implements vscode.Disposable {
                     message.summary
                 );
                 break;
+            case "NODE_PATCH":
+                break;
             case "VALIDATE_REQUEST":
                 void this.runValidation(message.rawText);
                 break;
@@ -88,7 +91,8 @@ export class RuxDocumentManager implements vscode.Disposable {
                 void this.exportCodeToDisk(
                     message.outputDir,
                     message.targetLanguage,
-                    message.targetFramework
+                    message.targetFramework,
+                    message.rawText
                 );
                 break;
             case "FIGMA_IMPORT_REQUEST":
@@ -120,7 +124,7 @@ export class RuxDocumentManager implements vscode.Disposable {
             case "SWITCH_VIEW_MODE":
                 break;
             case "REQUEST_SAVE":
-                void this.document.save();
+                void this.handleRequestSave(message.rawText);
                 break;
             case "EXECUTE_COMMAND":
                 void this.executeCommand(message.command);
@@ -128,10 +132,41 @@ export class RuxDocumentManager implements vscode.Disposable {
         }
     }
 
+    private async handleRequestSave(rawText?: string): Promise<void> {
+        if (rawText) {
+            await this.applyWebviewDocumentChange(rawText, "Save Document");
+        }
+        const saved = await this.document.save();
+        this.postMessage({
+            type: "SAVE_COMPLETE",
+            success: saved,
+        });
+    }
+
     private sendInitialState(): void {
-        const rawText = this.document.getText();
-        this.lastSentText = rawText;
-        const parsedDoc = parseRuxDocument(rawText);
+        let rawText = this.document.getText();
+        let parsedDoc: RuxDocument | null = null;
+
+        if (rawText.trim().length === 0) {
+            parsedDoc = createDefaultStarterDocument(this.document.fileName);
+            rawText = JSON.stringify(parsedDoc, null, 2);
+            this.lastSentText = rawText;
+
+            const entireRange = new vscode.Range(
+                this.document.positionAt(0),
+                this.document.positionAt(this.document.getText().length)
+            );
+            const edit = new vscode.WorkspaceEdit();
+            edit.replace(this.document.uri, entireRange, rawText);
+            void vscode.workspace.applyEdit(edit).then(async (applied) => {
+                if (applied) {
+                    await this.document.save();
+                }
+            });
+        } else {
+            this.lastSentText = rawText;
+            parsedDoc = parseRuxDocument(rawText);
+        }
 
         this.postMessage({
             type: "DOCUMENT_INIT",
@@ -158,7 +193,9 @@ export class RuxDocumentManager implements vscode.Disposable {
 
     private handleExternalDocumentChange(): void {
         const currentText = this.document.getText();
-        if (currentText === this.lastSentText) {
+        const normalizedCurrent = currentText.replace(/\r\n/g, "\n");
+        const normalizedLast = this.lastSentText.replace(/\r\n/g, "\n");
+        if (normalizedCurrent === normalizedLast) {
             return;
         }
 
@@ -238,7 +275,9 @@ export class RuxDocumentManager implements vscode.Disposable {
         newText: string,
         _summary?: string
     ): Promise<void> {
-        if (newText === this.document.getText()) {
+        const normalizedNew = newText.replace(/\r\n/g, "\n");
+        const normalizedDoc = this.document.getText().replace(/\r\n/g, "\n");
+        if (normalizedNew === normalizedDoc) {
             return;
         }
 
@@ -353,7 +392,8 @@ export class RuxDocumentManager implements vscode.Disposable {
     public async exportCodeToDisk(
         customOutputDir?: string,
         targetLanguage?: TargetLanguage,
-        targetFramework?: TargetFramework
+        targetFramework?: TargetFramework,
+        rawTextOverride?: string
     ): Promise<void> {
         if (this.isDisposed) {
             return;
@@ -371,8 +411,9 @@ export class RuxDocumentManager implements vscode.Disposable {
             : "RUST";
 
         try {
+            const contentToExport = rawTextOverride || this.document.getText();
             const result = await this.daemonClient.exportCode({
-                content: this.document.getText(),
+                content: contentToExport,
                 output_dir: outputDir,
                 rux_path: this.document.uri.fsPath,
                 target_language: targetLanguage,
@@ -389,9 +430,26 @@ export class RuxDocumentManager implements vscode.Disposable {
                 type: "EXPORT_CODE_RESULT",
                 result,
             });
-            void vscode.window.showInformationMessage(
-                `Ruxel Studio: Exported ${frameworkLabel} code to ${outputDir}`
-            );
+            const openAction = "Open View File";
+            void vscode.window
+                .showInformationMessage(
+                    `Ruxel Studio: Exported ${frameworkLabel} code to ${outputDir}`,
+                    openAction
+                )
+                .then(async (selection) => {
+                    if (selection === openAction && result.ui_generated_path) {
+                        try {
+                            const targetUri = vscode.Uri.file(result.ui_generated_path);
+                            const doc = await vscode.workspace.openTextDocument(targetUri);
+                            await vscode.window.showTextDocument(doc, {
+                                viewColumn: vscode.ViewColumn.Beside,
+                                preview: false,
+                            });
+                        } catch {
+                            
+                        }
+                    }
+                });
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             void vscode.window.showErrorMessage(

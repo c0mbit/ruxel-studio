@@ -2,6 +2,12 @@ import { FC, useCallback } from "react";
 import { BottomBar } from "./components/BottomBar";
 import { SceneBuilderView } from "./components/SceneBuilderView";
 import { TextViewer } from "./components/TextViewer";
+import { ThemeEditor } from "./panels/ThemeEditor";
+import { FigmaImportModal } from "./panels/FigmaImportModal";
+import { MultiplayerModal } from "./panels/MultiplayerModal";
+import { SavePresetModal } from "./panels/SavePresetModal";
+import { FrameworkSyncModal } from "./panels/FrameworkSyncModal";
+import { ValidationDrawer } from "./panels/ValidationDrawer";
 import { useExtensionIpc } from "./hooks/useExtensionIpc";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useDocumentMutation } from "./hooks/useDocumentMutation";
@@ -13,6 +19,10 @@ export const App: FC = () => {
     const viewMode = useEditorStore((state) => state.viewMode);
     const selectedNodeId = useEditorStore((state) => state.selectedNodeId);
     const setSelectedNodeId = useEditorStore((state) => state.setSelectedNodeId);
+    const isThemeEditorOpen = useEditorStore((state) => state.isThemeEditorOpen);
+    const setIsThemeEditorOpen = useEditorStore((state) => state.setIsThemeEditorOpen);
+    const isFigmaImportOpen = useEditorStore((state) => state.isFigmaImportOpen);
+    const setIsFigmaImportOpen = useEditorStore((state) => state.setIsFigmaImportOpen);
 
     const {
         sendDocumentChange,
@@ -20,6 +30,7 @@ export const App: FC = () => {
         sendValidateRequest,
         sendSwitchViewMode,
         sendRequestSave,
+        sendImportFigma,
     } = useExtensionIpc();
 
     const { executeNodeMutation } = useDocumentMutation(sendDocumentChange);
@@ -84,6 +95,25 @@ export const App: FC = () => {
                 onUndo={handleHistoryChange}
                 onRedo={handleHistoryChange}
             />
+
+            <ThemeEditor
+                isOpen={isThemeEditorOpen}
+                onClose={() => setIsThemeEditorOpen(false)}
+                onDocumentChange={sendDocumentChange}
+            />
+
+            <FigmaImportModal
+                isOpen={isFigmaImportOpen}
+                onClose={() => setIsFigmaImportOpen(false)}
+                onImport={(token, url, nodeId) => {
+                    sendImportFigma(token, url, nodeId);
+                }}
+            />
+
+            <MultiplayerModal />
+            <SavePresetModal />
+            <FrameworkSyncModal />
+            <ValidationDrawer />
         </div>
     );
 };

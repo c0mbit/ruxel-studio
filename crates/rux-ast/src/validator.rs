@@ -102,6 +102,9 @@ impl DocumentValidator {
     }
 
     pub fn validate_json(&self, json_str: &str) -> Result<RuxDocument, Vec<ValidationError>> {
+        if json_str.trim().is_empty() {
+            return Ok(RuxDocument::default());
+        }
         match RuxDocument::from_json(json_str) {
             Ok(doc) => {
                 let mut errors = Vec::new();
@@ -988,5 +991,15 @@ mod tests {
         assert_eq!(doc.root.children.len(), 1);
         assert_eq!(doc.root.children[0].widget_type, WidgetType::Button);
         assert_eq!(doc.root.children[0].properties.text.as_deref(), Some("Click Me"));
+    }
+
+    #[test]
+    fn test_validate_empty_json_graceful() {
+        let validator = DocumentValidator::new();
+        let result_empty = validator.validate_json("");
+        assert!(result_empty.is_ok());
+
+        let result_whitespace = validator.validate_json("   \n\t  ");
+        assert!(result_whitespace.is_ok());
     }
 }

@@ -1,5 +1,5 @@
 import { FC } from "react";
-import type { BreadcrumbItem, DaemonStatus, ViewMode } from "@ruxel/shared-types";
+import type { BreadcrumbItem, DaemonStatus, TargetFramework, ViewMode } from "@ruxel/shared-types";
 import { useCrdtStore } from "../state/crdtStore";
 import { useEditorStore } from "../state/editorStore";
 import { useHistoryStore } from "../state/historyStore";
@@ -27,12 +27,15 @@ export const BottomBar: FC<BottomBarProps> = ({
     const daemonStatus = useEditorStore((state) => state.daemonStatus);
     const rawText = useEditorStore((state) => state.rawText);
     const targetFramework = useEditorStore((state) => state.targetFramework);
+    const setTargetFramework = useEditorStore((state) => state.setTargetFramework);
     const targetLanguage = useEditorStore((state) => state.targetLanguage);
     const setIsThemeEditorOpen = useEditorStore((state) => state.setIsThemeEditorOpen);
     const setIsFigmaImportOpen = useEditorStore((state) => state.setIsFigmaImportOpen);
     const setIsFrameworkSyncModalOpen = useEditorStore((state) => state.setIsFrameworkSyncModalOpen);
     const isAnimationTimelineOpen = useEditorStore((state) => state.isAnimationTimelineOpen);
     const setIsAnimationTimelineOpen = useEditorStore((state) => state.setIsAnimationTimelineOpen);
+    const isValidationDrawerOpen = useEditorStore((state) => state.isValidationDrawerOpen);
+    const setIsValidationDrawerOpen = useEditorStore((state) => state.setIsValidationDrawerOpen);
     const docTheme = useEditorStore((state) => state.document?.theme);
     const connectionStatus = useCrdtStore((state) => state.connectionStatus);
     const peers = useCrdtStore((state) => state.peers);
@@ -106,9 +109,11 @@ export const BottomBar: FC<BottomBarProps> = ({
     const renderValidationBadge = () => {
         if (validationResult.valid && validationResult.errors.length === 0) {
             return (
-                <div
-                    className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-950/40 border border-emerald-800/60 text-xs text-emerald-400"
-                    title="AST is completely valid"
+                <button
+                    type="button"
+                    onClick={() => setIsValidationDrawerOpen(!isValidationDrawerOpen)}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-950/40 hover:bg-emerald-900/40 border border-emerald-800/60 text-xs text-emerald-400 transition-colors"
+                    title="AST is completely valid (Click to inspect)"
                 >
                     <svg
                         className="w-3.5 h-3.5"
@@ -124,14 +129,16 @@ export const BottomBar: FC<BottomBarProps> = ({
                         />
                     </svg>
                     <span className="font-mono text-[11px]">Valid</span>
-                </div>
+                </button>
             );
         }
 
         return (
-            <div
-                className="flex items-center gap-1 px-2 py-0.5 rounded bg-rose-950/40 border border-rose-800/60 text-xs text-rose-400"
-                title={`${validationResult.errors.length} validation errors found`}
+            <button
+                type="button"
+                onClick={() => setIsValidationDrawerOpen(!isValidationDrawerOpen)}
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-rose-950/40 hover:bg-rose-900/40 border border-rose-800/60 text-xs text-rose-400 transition-colors animate-pulse"
+                title={`${validationResult.errors.length} validation errors found (Click to view and auto-fix)`}
             >
                 <svg
                     className="w-3.5 h-3.5"
@@ -149,7 +156,7 @@ export const BottomBar: FC<BottomBarProps> = ({
                 <span className="font-mono text-[11px]">
                     {validationResult.errors.length} error{validationResult.errors.length === 1 ? "" : "s"}
                 </span>
-            </div>
+            </button>
         );
     };
 
@@ -326,27 +333,42 @@ export const BottomBar: FC<BottomBarProps> = ({
                     <span className="font-mono text-[11px]">AI Sync</span>
                 </button>
 
-                <button
-                    type="button"
-                    onClick={handleExportClick}
-                    className="flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs text-emerald-400 transition-colors"
-                    title={`Export ${targetFramework} code to disk`}
-                >
-                    <svg
-                        className="w-3 h-3"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2}
+                <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded">
+                    <select
+                        value={targetFramework}
+                        onChange={(e) => setTargetFramework(e.target.value as TargetFramework)}
+                        className="bg-transparent text-[11px] font-mono text-zinc-300 px-1.5 py-0.5 outline-none border-r border-zinc-800 cursor-pointer"
+                        title="Select Target Framework for Code Export"
                     >
-                        <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-                        />
-                    </svg>
-                    <span className="font-mono text-[11px] uppercase">Export {targetFramework}</span>
-                </button>
+                        <option value="iced" className="bg-zinc-900 text-zinc-200">ICED (Rust)</option>
+                        <option value="egui" className="bg-zinc-900 text-zinc-200">EGUI (Rust)</option>
+                        <option value="slint" className="bg-zinc-900 text-zinc-200">SLINT (Rust)</option>
+                        <option value="dioxus" className="bg-zinc-900 text-zinc-200">DIOXUS (Rust)</option>
+                        <option value="fyne" className="bg-zinc-900 text-zinc-200">FYNE (Go)</option>
+                        <option value="flet" className="bg-zinc-900 text-zinc-200">FLET (Python)</option>
+                    </select>
+                    <button
+                        type="button"
+                        onClick={handleExportClick}
+                        className="flex items-center gap-1 px-2 py-0.5 hover:bg-zinc-800 text-xs text-emerald-400 transition-colors"
+                        title={`Export ${targetFramework} code to workspace`}
+                    >
+                        <svg
+                            className="w-3 h-3"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                            />
+                        </svg>
+                        <span className="font-mono text-[11px] uppercase">Export</span>
+                    </button>
+                </div>
                 <button
                     type="button"
                     onClick={() => setIsMultiplayerModalOpen(true)}

@@ -1,17 +1,18 @@
 import { create } from "zustand";
-import type {
-    BreadcrumbItem,
-    CodegenDiagnostic,
-    DaemonCodegenResult,
-    DaemonExportCodeResult,
-    DaemonFrameworkSyncStatusResult,
-    DaemonStatus,
-    DaemonValidationResult,
-    GeneratedFile,
-    RuxDocument,
-    TargetFramework,
-    TargetLanguage,
-    ViewMode,
+import {
+    type BreadcrumbItem,
+    type CodegenDiagnostic,
+    type DaemonCodegenResult,
+    type DaemonExportCodeResult,
+    type DaemonFrameworkSyncStatusResult,
+    type DaemonStatus,
+    type DaemonValidationResult,
+    type GeneratedFile,
+    type RuxDocument,
+    type TargetFramework,
+    type TargetLanguage,
+    type ViewMode,
+    createDefaultStarterDocument,
 } from "@ruxel/shared-types";
 import { findNodePath, safeParseJson } from "../utils/treeTraversal";
 import { sharedCrdtBridge, sharedCrdtClient } from "./crdtStore";
@@ -97,8 +98,10 @@ export interface EditorState {
     }) => void;
     readonly frameworkSyncStatus: DaemonFrameworkSyncStatusResult | null;
     readonly isFrameworkSyncModalOpen: boolean;
+    readonly isValidationDrawerOpen: boolean;
     readonly setFrameworkSyncStatus: (status: DaemonFrameworkSyncStatusResult) => void;
     readonly setIsFrameworkSyncModalOpen: (isOpen: boolean) => void;
+    readonly setIsValidationDrawerOpen: (isOpen: boolean) => void;
     readonly markClean: () => void;
 }
 
@@ -140,9 +143,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     importedAssets: [],
     frameworkSyncStatus: null,
     isFrameworkSyncModalOpen: false,
+    isValidationDrawerOpen: false,
 
     setInitialDocument: (rawText, doc, isDirty, isReadOnly) => {
-        const parsed = doc ?? safeParseJson(rawText).document;
+        let parsed = doc ?? safeParseJson(rawText).document;
+        let textToUse = rawText;
+        if (!parsed && rawText.trim().length === 0) {
+            parsed = createDefaultStarterDocument();
+            textToUse = JSON.stringify(parsed, null, 2);
+        }
         const selectedId = get().selectedNodeId;
         const breadcrumbs =
             parsed && selectedId
@@ -163,7 +172,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
         set({
             document: parsed,
-            rawText,
+            rawText: textToUse,
             isDirty,
             isReadOnly,
             selectedNodeId: selectedId ?? (parsed ? parsed.root.id : null),
@@ -248,6 +257,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     },
 
     setViewMode: (viewMode) => {
+        if (viewMode === "scene_builder") {
+            const currentRaw = get().rawText;
+            const parsed = safeParseJson(currentRaw).document;
+            if (parsed) {
+                const selectedId = get().selectedNodeId;
+                const breadcrumbs = selectedId
+                    ? findNodePath(parsed.root, selectedId) ?? []
+                    : [
+                          {
+                              id: parsed.root.id,
+                              widgetType: parsed.root.widget_type,
+                              name: parsed.root.properties?.text ?? parsed.root.id,
+                          },
+                      ];
+                set({
+                    viewMode,
+                    document: parsed,
+                    breadcrumbs,
+                });
+                return;
+            }
+        }
         set({ viewMode });
     },
 
@@ -376,6 +407,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         })),
     setFrameworkSyncStatus: (status) => set({ frameworkSyncStatus: status }),
     setIsFrameworkSyncModalOpen: (isOpen) => set({ isFrameworkSyncModalOpen: isOpen }),
+    setIsValidationDrawerOpen: (isOpen) => set({ isValidationDrawerOpen: isOpen }),
 
     markClean: () => {
         set({ isDirty: false });

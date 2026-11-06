@@ -393,6 +393,14 @@ fn handle_validate(params: Option<Value>) -> Result<DaemonValidationResult, (i32
     let validate_params: ValidateParams = serde_json::from_value(raw_params)
         .map_err(|e| (-32602, format!("Invalid params for rux/validate: {}", e)))?;
 
+    if validate_params.content.trim().is_empty() {
+        return Ok(DaemonValidationResult {
+            valid: true,
+            errors: Vec::new(),
+            document: Some(RuxDocument::default()),
+        });
+    }
+
     let validator = DocumentValidator::new();
     match validator.validate_json(&validate_params.content) {
         Ok(doc) => Ok(DaemonValidationResult {
@@ -424,6 +432,13 @@ fn handle_format(params: Option<Value>) -> Result<DaemonFormatResult, (i32, Stri
     let raw_params = params.ok_or((-32602, "Missing params for rux/format".to_string()))?;
     let format_params: FormatParams = serde_json::from_value(raw_params)
         .map_err(|e| (-32602, format!("Invalid params for rux/format: {}", e)))?;
+
+    if format_params.content.trim().is_empty() {
+        let default_doc = RuxDocument::default();
+        let formatted = serde_json::to_string_pretty(&default_doc)
+            .unwrap_or_else(|_| "{}".to_string());
+        return Ok(DaemonFormatResult { formatted });
+    }
 
     let parsed_value: Value = serde_json::from_str(&format_params.content)
         .map_err(|e| (-32602, format!("Invalid JSON content for format: {}", e)))?;
@@ -1577,5 +1592,97 @@ fn main() {
             eprintln!("Unknown command: {}", cmd);
             process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_context() -> Arc<AppContext> {
+        let stdout_lock = Arc::new(Mutex::new(io::stdout()));
+        AppContext::new(stdout_lock)
+    }
+
+    #[test]
+    fn test_ping_json_rpc() {
+        let ctx = create_test_context();
+        let request = r#"{"jsonrpc":"2.0","id":1,"method":"rux/ping"}"#;
+        let response = process_json_rpc_line(&ctx, request).expect("response");
+        let val: Value = serde_json::from_str(&response).expect("valid json");
+        assert_eq!(val["result"], "pong");
+    }
+
+    #[test]
+    fn test_version_json_rpc() {
+        let ctx = create_test_context();
+        let request = r#"{"jsonrpc":"2.0","id":2,"method":"rux/version"}"#;
+        let response = process_json_rpc_line(&ctx, request).expect("response");
+        let val: Value = serde_json::from_str(&response).expect("valid json");
+        assert_eq!(val["result"]["version"], "0.1.0");
+    }
+
+    #[test]
+    fn test_validate_empty_json_rpc() {
+        let ctx = create_test_context();
+        let request = r#"{"jsonrpc":"2.0","id":3,"method":"rux/validate","params":{"content":""}}"#;
+        let response = process_json_rpc_line(&ctx, request).expect("response");
+        let val: Value = serde_json::from_str(&response).expect("valid json");
+        assert_eq!(val["result"]["valid"], true);
+        assert!(val["result"]["errors"].as_array().expect("array").is_empty());
+    }
+
+    #[test]
+    fn test_validate_valid_json_rpc() {
+        let ctx = create_test_context();
+        let sample = include_str!("../../../examples/sample_app.rux");
+        let params = serde_json::json!({ "content": sample });
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "rux/validate",
+            "params": params
+        });
+        let response = process_json_rpc_line(&ctx, &req.to_string()).expect("response");
+        let val: Value = serde_json::from_str(&response).expect("valid json");
+        assert_eq!(val["result"]["valid"], true);
+    }
+
+    #[test]
+    fn test_validate_invalid_json_rpc() {
+        let ctx = create_test_context();
+        let request = r#"{"jsonrpc":"2.0","id":5,"method":"rux/validate","params":{"content":"{ invalid json"}}"#;
+        let response = process_json_rpc_line(&ctx, request).expect("response");
+        let val: Value = serde_json::from_str(&response).expect("valid json");
+        assert_eq!(val["result"]["valid"], false);
+        assert!(!val["result"]["errors"].as_array().expect("array").is_empty());
+    }
+
+    #[test]
+    fn test_format_empty_json_rpc() {
+        let ctx = create_test_context();
+        let request = r#"{"jsonrpc":"2.0","id":6,"method":"rux/format","params":{"content":""}}"#;
+        let response = process_json_rpc_line(&ctx, request).expect("response");
+        let val: Value = serde_json::from_str(&response).expect("valid json");
+        assert!(val["result"]["formatted"].as_str().expect("string").contains("schema_version"));
+    }
+
+    #[test]
+    fn test_framework_sync_status_json_rpc() {
+        let ctx = create_test_context();
+        let request = r#"{"jsonrpc":"2.0","id":7,"method":"rux/getFrameworkSyncStatus"}"#;
+        let response = process_json_rpc_line(&ctx, request).expect("response");
+        let val: Value = serde_json::from_str(&response).expect("valid json");
+        let frameworks = val["result"]["frameworks"].as_array().expect("frameworks array");
+        assert_eq!(frameworks.len(), 6);
+    }
+
+    #[test]
+    fn test_unknown_method_json_rpc() {
+        let ctx = create_test_context();
+        let request = r#"{"jsonrpc":"2.0","id":8,"method":"rux/nonExistent"}"#;
+        let response = process_json_rpc_line(&ctx, request).expect("response");
+        let val: Value = serde_json::from_str(&response).expect("valid json");
+        assert_eq!(val["error"]["code"], -32601);
     }
 }

@@ -1,16 +1,11 @@
 import { FC, useState, useCallback, useRef } from "react";
+import { createDefaultStarterDocument } from "@ruxel/shared-types";
 import { useEditorStore } from "../state/editorStore";
 import { ViewportContainer } from "../viewport/ViewportContainer";
 import { ComponentPalette } from "../panels/ComponentPalette";
 import { HierarchyTree } from "../panels/HierarchyTree";
 import { InspectorPanel } from "../panels/InspectorPanel";
-import { ThemeEditor } from "../panels/ThemeEditor";
 import { AnimationTimeline } from "../panels/AnimationTimeline";
-import { FigmaImportModal } from "../panels/FigmaImportModal";
-import { MultiplayerModal } from "../panels/MultiplayerModal";
-import { SavePresetModal } from "../panels/SavePresetModal";
-import { FrameworkSyncModal } from "../panels/FrameworkSyncModal";
-import { useExtensionIpc } from "../hooks/useExtensionIpc";
 
 interface SceneBuilderViewProps {
     readonly onSelectNode?: (nodeId: string) => void;
@@ -33,11 +28,9 @@ export const SceneBuilderView: FC<SceneBuilderViewProps> = ({
     onDocumentChange,
 }) => {
     const document = useEditorStore((state) => state.document);
-    const isThemeEditorOpen = useEditorStore((state) => state.isThemeEditorOpen);
-    const setIsThemeEditorOpen = useEditorStore((state) => state.setIsThemeEditorOpen);
-    const isFigmaImportOpen = useEditorStore((state) => state.isFigmaImportOpen);
-    const setIsFigmaImportOpen = useEditorStore((state) => state.setIsFigmaImportOpen);
-    const { sendImportFigma } = useExtensionIpc();
+    const setViewMode = useEditorStore((state) => state.setViewMode);
+    const setRawText = useEditorStore((state) => state.setRawText);
+    const setSelectedNodeId = useEditorStore((state) => state.setSelectedNodeId);
 
     const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
     const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
@@ -128,10 +121,44 @@ export const SceneBuilderView: FC<SceneBuilderViewProps> = ({
         }
     }, []);
 
+    const handleResetToDefault = useCallback(() => {
+        const starter = createDefaultStarterDocument();
+        const json = JSON.stringify(starter, null, 2);
+        setRawText(json);
+        onDocumentChange?.(json, "Reset to Default Template");
+        setSelectedNodeId("root");
+    }, [setRawText, onDocumentChange, setSelectedNodeId]);
+
     if (!document) {
         return (
-            <div className="flex-1 flex items-center justify-center bg-zinc-950 text-zinc-500 font-sans text-sm">
-                No .rux document loaded
+            <div className="flex-1 flex flex-col items-center justify-center bg-zinc-950 text-zinc-300 font-sans p-6 select-none">
+                <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-2xl text-center space-y-4">
+                    <div className="w-12 h-12 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center mx-auto text-xl">
+                        ⚠️
+                    </div>
+                    <div>
+                        <h2 className="text-base font-semibold text-zinc-100">No .rux Document Loaded</h2>
+                        <p className="text-xs text-zinc-400 mt-1">
+                            The document buffer is either empty or contains invalid syntax.
+                        </p>
+                    </div>
+                    <div className="flex items-center justify-center gap-3 pt-2">
+                        <button
+                            type="button"
+                            onClick={handleResetToDefault}
+                            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors shadow-sm"
+                        >
+                            Reset to Default Template
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setViewMode("text")}
+                            className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 transition-colors"
+                        >
+                            Open in Code Tab to Fix
+                        </button>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -215,24 +242,6 @@ export const SceneBuilderView: FC<SceneBuilderViewProps> = ({
                     <InspectorPanel onDocumentChange={onDocumentChange} />
                 </aside>
             )}
-
-            <ThemeEditor
-                isOpen={isThemeEditorOpen}
-                onClose={() => setIsThemeEditorOpen(false)}
-                onDocumentChange={onDocumentChange}
-            />
-
-            <FigmaImportModal
-                isOpen={isFigmaImportOpen}
-                onClose={() => setIsFigmaImportOpen(false)}
-                onImport={(token, url, nodeId) => {
-                    sendImportFigma(token, url, nodeId);
-                }}
-            />
-
-            <MultiplayerModal />
-            <SavePresetModal />
-            <FrameworkSyncModal />
         </div>
     );
 };

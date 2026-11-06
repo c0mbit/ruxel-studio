@@ -1,4 +1,4 @@
-import { FC, useState, useCallback, useRef } from "react";
+import { FC, useState, useEffect, useCallback, useRef } from "react";
 import type { WidgetNode } from "@ruxel/shared-types";
 import { useEditorStore } from "../state/editorStore";
 import { useDocumentMutation } from "../hooks/useDocumentMutation";
@@ -38,9 +38,22 @@ export const HierarchyTree: FC<HierarchyTreeProps> = ({
 
     const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
     const [expandedNodes, setExpandedNodes] = useState<ReadonlySet<string>>(
-        new Set<string>()
+        new Set<string>(["root"])
     );
     const dragSourceIdRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        if (document?.root.id) {
+            setExpandedNodes((prev) => {
+                if (prev.has(document.root.id)) {
+                    return prev;
+                }
+                const next = new Set(prev);
+                next.add(document.root.id);
+                return next;
+            });
+        }
+    }, [document]);
 
     const toggleExpanded = useCallback((nodeId: string) => {
         setExpandedNodes((prev) => {
