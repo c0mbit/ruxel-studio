@@ -123,7 +123,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run build",
-    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "build": "tsc --noEmit -p tsconfig.json && esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
     "watch": "tsc -watch -p tsconfig.json",
     "test": "node test/binaryResolver.test.mjs",
     "package": "vsce package --no-dependencies"

@@ -1,30 +1,30 @@
 import * as child_process from "child_process";
 import * as vscode from "vscode";
-import type {
-    AstPatchedFromCodePayload,
-    DaemonCodegenParams,
-    DaemonCodegenResult,
-    DaemonCompileWasmParams,
-    DaemonCompileWasmResult,
-    DaemonExportCodeParams,
-    DaemonExportCodeResult,
-    DaemonFormatParams,
-    DaemonFrameworkSyncStatusResult,
-    DaemonImportAssetParams,
-    DaemonImportAssetResult,
-    DaemonImportFigmaParams,
-    DaemonImportFigmaResult,
-    DaemonReverseParseParams,
-    DaemonReverseParseResult,
-    DaemonStatus,
-    DaemonUnwatchParams,
-    DaemonUnwatchResult,
-    DaemonValidateParams,
-    DaemonValidationResult,
-    DaemonVersionResult,
-    DaemonWasmPreviewStatus,
-    DaemonWatchParams,
-    DaemonWatchResult,
+import {
+    type AstPatchedFromCodePayload,
+    type DaemonCodegenParams,
+    type DaemonCodegenResult,
+    type DaemonCompileWasmParams,
+    type DaemonCompileWasmResult,
+    type DaemonExportCodeParams,
+    type DaemonExportCodeResult,
+    type DaemonFormatParams,
+    type DaemonFrameworkSyncStatusResult,
+    type DaemonImportAssetParams,
+    type DaemonImportAssetResult,
+    type DaemonImportFigmaParams,
+    type DaemonImportFigmaResult,
+    type DaemonReverseParseParams,
+    type DaemonReverseParseResult,
+    type DaemonStatus,
+    type DaemonUnwatchParams,
+    type DaemonUnwatchResult,
+    type DaemonValidateParams,
+    type DaemonValidationResult,
+    type DaemonVersionResult,
+    type DaemonWasmPreviewStatus,
+    type DaemonWatchParams,
+    type DaemonWatchResult,
     serializeRuxDocument,
 } from "@ruxel/shared-types";
 import { resolveBinary } from "./BinaryResolver";
@@ -252,7 +252,7 @@ export class DaemonClient implements vscode.Disposable {
 
         const sanitizedParams: DaemonCodegenParams = {
             ...params,
-            rux_content: sanitizeRuxContent(params.rux_content),
+            content: sanitizeRuxContent(params.content),
         };
         return this.connection.sendRequest<
             DaemonCodegenResult,
@@ -269,7 +269,7 @@ export class DaemonClient implements vscode.Disposable {
 
         const sanitizedParams: DaemonExportCodeParams = {
             ...params,
-            rux_content: sanitizeRuxContent(params.rux_content),
+            content: sanitizeRuxContent(params.content),
         };
         return this.connection.sendRequest<
             DaemonExportCodeResult,
@@ -338,7 +338,7 @@ export class DaemonClient implements vscode.Disposable {
 
         const sanitizedParams: DaemonCompileWasmParams = {
             ...params,
-            rux_content: sanitizeRuxContent(params.rux_content),
+            content: sanitizeRuxContent(params.content),
         };
         return this.connection.sendRequest<
             DaemonCompileWasmResult,
