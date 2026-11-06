@@ -16,6 +16,18 @@ Ruxel Studio is a high-performance visual design tool built directly into Visual
 - **Cross-Platform Native Daemons**: Bundled zero-configuration Rust daemons for Windows, macOS (Intel & Apple Silicon), and Linux.
 - **Open Source**: 100% free and open-source under MIT and Apache-2.0 licenses with zero paywalls.
 
+## Installation
+
+Ruxel Studio is distributed exclusively via **GitHub Releases** as precompiled `.vsix` packages bundling all native platform daemons:
+
+1. Download the latest `ruxel-studio-*.vsix` file from [GitHub Releases](https://github.com/c0mbit/ruxel-studio/releases).
+2. In VS Code, open the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`).
+3. Click the `...` menu and select **Install from VSIX...**, then choose the downloaded file.
+4. Or via terminal:
+   ```bash
+   code --install-extension ruxel-studio-*.vsix
+   ```
+
 ## Getting Started
 
 1. Open any `.rux` file in your workspace to launch the Ruxel Studio visual editor.

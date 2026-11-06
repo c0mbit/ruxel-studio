@@ -13,7 +13,7 @@
     "test": "npm --workspace=ruxel-studio test",
     "stage:release": "node scripts/stage-release.mjs",
     "stage:local": "node scripts/stage-release.mjs --local",
-    "package": "node scripts/stage-release.mjs && cd packages/extension && npx @vscode/vsce package --no-dependencies"
+    "package": "node scripts/stage-release.mjs && cd packages/extension && npx vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

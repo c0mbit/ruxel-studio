@@ -1,6 +1,6 @@
 # Ruxel Studio — Build Checkpoint
 
-## Current Phase: Level 12: Cross-Platform Release Engineering & Automated VS Code Marketplace Publishing
+## Current Phase: Level 12: Cross-Platform Release Engineering & Automated GitHub Releases Distribution
 
 ## Status: COMPLETED (100%)
 
@@ -18,7 +18,7 @@
 - [x] Level 10: Ultimate Enterprise Tooling (Wasm Preview, Smart Assets, i18n, Multi-Screen Routing) — COMPLETED (100%)
 - [x] Unlocking All Features & Removing All Artificial Paywalls — COMPLETED (100%)
 - [x] Level 11: Cloud AI-Driven Framework Sync (Automated Self-Updating Pipeline) — COMPLETED (100%)
-- [x] Level 12: Cross-Platform Release Engineering & Automated VS Code Marketplace Publishing — COMPLETED (100%)
+- [x] Level 12: Cross-Platform Release Engineering & Automated GitHub Releases Distribution — COMPLETED (100%)
 
 ### Level 12 Implementation Progress:
 - [x] Step 1: Cross-Platform Daemon & Sync Server Binary Resolution (`packages/extension`) — COMPLETED (100%)
@@ -28,20 +28,20 @@
   - [x] Enforced Unix executable permissions (`chmod +x` / mode `0o755`) prior to spawning
   - [x] Integrated `BinaryResolver` into `DaemonClient.ts` for `rux-daemon` and `rux-sync-server`
 - [x] Step 2: VSIX Packaging & Production Bundling Scripts — COMPLETED (100%)
-  - [x] Configured root and extension `package.json` metadata for VS Code Marketplace
+  - [x] Configured root and extension `package.json` metadata for GitHub Releases distribution
   - [x] Generated high-resolution 128x128 RGBA branding icon (`packages/extension/assets/icon.png`)
   - [x] Authored production extension overview and documentation in `packages/extension/README.md`
   - [x] Added dual open-source `LICENSE-MIT`, `LICENSE-APACHE`, and `LICENSE.md` files
   - [x] Updated root `Cargo.toml` with dual license specification
   - [x] Verified `.vscodeignore` whitelist rules for production packaging
   - [x] Created cross-platform build and staging pipeline (`scripts/stage-release.mjs`)
-- [x] Step 3: Zero-Touch Cloud CI/CD Release & Marketplace Workflow (`.github/workflows/release-publish.yml`) — COMPLETED (100%)
-  - [x] Triggered on push to `main` (including Level 11 sync bot commits) and tags `v*`
+- [x] Step 3: Zero-Touch Cloud CI/CD Release Workflow (`.github/workflows/release-publish.yml`) — COMPLETED (100%)
+  - [x] Triggered on push to `main` and release tags `v*`
   - [x] Job 1: `test-suite` running `cargo test --workspace` and `npm --workspaces run build`
   - [x] Job 2: `build-binaries` matrix across `windows-latest`, `ubuntu-latest`, and `macos-latest` (x64 and arm64)
-  - [x] Job 3: `package-and-publish` on `ubuntu-latest` downloading artifacts, staging, packaging `.vsix`, creating GitHub Release, and publishing to Marketplace via `VSCE_PAT`
+  - [x] Job 3: `package-and-publish` on `ubuntu-latest` downloading artifacts, staging, packaging `.vsix` via `npx vsce package`, and uploading to GitHub Releases via `softprops/action-gh-release@v1`
 - [x] Step 4: End-to-End Release Verification & Comprehensive Matrix — COMPLETED (100%)
   - [x] Automated binary path resolution test suite in `packages/extension/test/binaryResolver.test.mjs` (12/12 passed)
   - [x] Verified local staging pipeline (`node scripts/stage-release.mjs --local`) cleanly compiled and staged
   - [x] Verified full workspace test suites: `cargo test --workspace` (81/81 passed) and `npm --workspaces run build` (0 errors)
-  - [x] Verified hermetic `.vsix` packaging via `@vscode/vsce package --no-dependencies` (0 errors, 0 warnings)
+  - [x] Verified hermetic `.vsix` packaging via `npx vsce package --no-dependencies` (0 errors, 0 warnings)

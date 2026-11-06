@@ -5,13 +5,10 @@
 **The Cross-Platform Visual UI Editor for Rust & Go Desktop Frameworks**
 
 [![CI/CD Build & Publish](https://github.com/c0mbit/ruxel-studio/actions/workflows/release-publish.yml/badge.svg)](https://github.com/c0mbit/ruxel-studio/actions/workflows/release-publish.yml)
-[![VS Code Extension](https://img.shields.io/badge/VS%20Code%20Extension-v0.1.0-007acc?logo=visual-studio-code)](https://github.com/c0mbit/ruxel-studio/releases)
-[![Platform Support](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#autonomous-maintenance--cicd)
 [![License: MIT / Apache-2.0](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg)](LICENSE.md)
 [![Rust 2021](https://img.shields.io/badge/rust-2021%20edition-dea584?logo=rust)](https://www.rust-lang.org/)
 [![Go 1.21+](https://img.shields.io/badge/go-1.21+-00ADD8?logo=go)](https://go.dev/)
 [![TypeScript 5.3+](https://img.shields.io/badge/typescript-5.3+-3178C6?logo=typescript)](https://www.typescriptlang.org/)
-[![PRs Welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](#contributing)
 
 [Overview](#overview) • [Key Features](#key-features) • [Supported Frameworks](#supported-frameworks) • [Architecture](#architecture) • [Getting Started](#getting-started) • [Autonomous Maintenance](#autonomous-maintenance--cicd) • [License](#license)
 
@@ -174,7 +171,7 @@ flowchart TD
 ruxel-studio/
 ├── .github/
 │   └── workflows/
-│       ├── release-publish.yml     # Zero-touch cross-platform CI/CD & Marketplace publisher
+│       ├── release-publish.yml     # Zero-touch cross-platform CI/CD & GitHub Releases distribution
 │       └── framework-sync.yml      # AI framework self-healing sync pipeline
 ├── crates/
 │   ├── rux-ast/                    # Universal UI document model, schema validator, .rux serializer
@@ -198,14 +195,41 @@ ruxel-studio/
 
 ## Getting Started
 
-### Prerequisites
+### Installation (via GitHub Releases)
+
+Ruxel Studio is distributed exclusively via **GitHub Releases** as a precompiled `.vsix` extension package bundling all native multi-platform daemons. Due to outages and instabilities on public marketplaces, distribution is handled directly via GitHub Releases.
+
+#### Step-by-Step Installation:
+
+1. **Download the Latest VSIX Package**:
+   - Navigate to [GitHub Releases](https://github.com/c0mbit/ruxel-studio/releases).
+   - Under the latest release assets (e.g. `v1.0.0`), download the compiled `ruxel-studio-*.vsix` file.
+
+2. **Install in Visual Studio Code**:
+   - Launch Visual Studio Code.
+   - Open the **Extensions** view (`Ctrl+Shift+X` on Windows/Linux or `Cmd+Shift+X` on macOS).
+   - Click the **Views and More Actions** menu (`...` triple dot in the top right of the Extensions panel).
+   - Select **Install from VSIX...**
+   - In the file dialog, select the downloaded `ruxel-studio-*.vsix` file and confirm.
+   - *Command-line alternative*:
+     ```bash
+     code --install-extension ruxel-studio-*.vsix
+     ```
+
+3. **Verify Installation**:
+   - Reload or restart VS Code if prompted.
+   - Ruxel Studio will automatically initialize and detect the bundled platform daemons (`rux-daemon` and `rux-sync-server`).
+
+### Building from Source (Local Development)
+
+#### Prerequisites
 - **Node.js**: `v18.0.0` or higher
 - **Rust Toolchain**: `1.75.0` or higher (`stable`)
 - **Cargo**: Standard cargo installation (`rustup default stable`)
 - **WebAssembly Target**: `rustup target add wasm32-unknown-unknown` (for interactive preview)
 - *(Optional)* **Go**: `1.21` or higher (for Fyne code generation testing)
 
-### Installation & Local Setup
+#### Local Setup & Verification
 
 1. **Clone the repository**:
    ```bash
@@ -230,10 +254,7 @@ ruxel-studio/
 
 5. **Run the Workspace Verification Suite**:
    ```bash
-   # Run all Rust crate tests (AST, codegen, figma, reverse parser, daemons)
    cargo test --workspace
-
-   # Run extension binary resolution and integration tests
    npm run test
    ```
 
@@ -310,7 +331,7 @@ Ruxel Studio features an autonomous continuous integration and release engineeri
 
 ```mermaid
 flowchart LR
-    A[Push to main / Git Tag] --> B[Test Suite Verification]
+    A[Git Tag v*] --> B[Test Suite Verification]
     B --> C[Matrix Build Binaries]
     
     subgraph Matrix["Cross-Platform Matrix"]
@@ -322,9 +343,7 @@ flowchart LR
     
     C --> Matrix
     Matrix --> D[Stage & Package Hermetic VSIX]
-    D --> E[Publish to VS Code Marketplace]
-    D --> F[Publish to Open VSX Registry]
-    D --> G[GitHub Releases with Precompiled Assets]
+    D --> E[Upload VSIX & Assets to GitHub Releases]
 ```
 
 ### Hermetic Cross-Platform Packaging

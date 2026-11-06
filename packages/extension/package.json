@@ -35,6 +35,13 @@
     "visual-editor"
   ],
   "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCustomEditor:ruxel.ruxEditor",
+    "onCommand:ruxel.restartDaemon",
+    "onCommand:ruxel.validateCurrentDocument",
+    "onCommand:ruxel.formatCurrentDocument",
+    "onCommand:ruxel.generateCode"
+  ],
   "contributes": {
     "customEditors": [
       {
@@ -93,8 +100,7 @@
     "build": "tsc -p tsconfig.json",
     "watch": "tsc -watch -p tsconfig.json",
     "test": "node test/binaryResolver.test.mjs",
-    "package": "vsce package --no-dependencies",
-    "publish": "vsce publish --no-dependencies"
+    "package": "vsce package --no-dependencies"
   },
   "devDependencies": {
     "@ruxel/shared-types": "*",
