@@ -123,7 +123,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run build",
-    "build": "tsc -p tsconfig.json",
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
     "watch": "tsc -watch -p tsconfig.json",
     "test": "node test/binaryResolver.test.mjs",
     "package": "vsce package --no-dependencies"
@@ -132,6 +132,7 @@
     "@ruxel/shared-types": "*",
     "@types/node": "^20.10.0",
     "@types/vscode": "^1.85.0",
+    "esbuild": "^0.28.2",
     "typescript": "^5.3.0"
   }
 }
