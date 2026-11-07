@@ -351,6 +351,7 @@ flowchart LR
     C --> Matrix
     Matrix --> D[Stage & Package Hermetic VSIX]
     D --> E[Upload VSIX & Assets to GitHub Releases]
+    D --> F[Publish to VS Code Marketplace]
 ```
 
 ### Hermetic Cross-Platform Packaging
