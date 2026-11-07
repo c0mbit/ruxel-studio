@@ -4,7 +4,8 @@
 
 **The Cross-Platform Visual UI Editor for Rust & Go Desktop Frameworks**
 
-[![VS Code Marketplace Version](https://img.shields.io/vscode-marketplace/v/c0mbit.ruxel-studio?style=flat&label=VS%20Code%20Marketplace&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=c0mbit.ruxel-studio)[![CI/CD Build & Publish](https://github.com/c0mbit/ruxel-studio/actions/workflows/release-publish.yml/badge.svg)](https://github.com/c0mbit/ruxel-studio/actions/workflows/release-publish.yml)
+[![VS Code Marketplace Version](https://vsmarketplacebadges.dev/version/c0mbit.ruxel-studio.svg)](https://marketplace.visualstudio.com/items?itemName=c0mbit.ruxel-studio)
+[![CI/CD Build & Publish](https://github.com/c0mbit/ruxel-studio/actions/workflows/release-publish.yml/badge.svg)](https://github.com/c0mbit/ruxel-studio/actions/workflows/release-publish.yml)
 [![License: MIT / Apache-2.0](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg)](LICENSE.md)
 [![Rust 2021](https://img.shields.io/badge/rust-2021%20edition-dea584?logo=rust)](https://www.rust-lang.org/)
 [![Go 1.21+](https://img.shields.io/badge/go-1.21+-00ADD8?logo=go)](https://go.dev/)
