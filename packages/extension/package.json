@@ -2,17 +2,17 @@
   "name": "ruxel-studio",
   "displayName": "Ruxel Studio",
   "description": "Universal Visual UI Builder & Scene Builder for Rust and Go desktop applications",
-  "version": "0.1.0",
-  "publisher": "ruxel-studio",
+  "version": "0.1.1",
+  "publisher": "c0mbit",
   "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ruxel-studio/ruxel-studio"
+    "url": "https://github.com/c0mbit/ruxel-studio"
   },
   "bugs": {
-    "url": "https://github.com/ruxel-studio/ruxel-studio/issues"
+    "url": "https://github.com/c0mbit/ruxel-studio/issues"
   },
-  "homepage": "https://github.com/ruxel-studio/ruxel-studio",
+  "homepage": "https://github.com/c0mbit/ruxel-studio",
   "icon": "assets/icon.png",
   "engines": {
     "vscode": "^1.85.0"

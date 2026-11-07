@@ -18,7 +18,17 @@ Ruxel Studio is a high-performance visual design tool built directly into Visual
 
 ## Installation
 
-Ruxel Studio is distributed exclusively via **GitHub Releases** as precompiled `.vsix` packages bundling all native platform daemons:
+### Primary Method: Visual Studio Code Marketplace (Recommended)
+
+1. In VS Code, open the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`).
+2. Search for **`Ruxel Studio`** or **`c0mbit`**.
+3. Click **Install**.
+4. Or via terminal:
+   ```bash
+   code --install-extension c0mbit.ruxel-studio
+   ```
+
+### Secondary Fallback: Manual VSIX Installation (GitHub Releases)
 
 1. Download the latest `ruxel-studio-*.vsix` file from [GitHub Releases](https://github.com/c0mbit/ruxel-studio/releases).
 2. In VS Code, open the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`).

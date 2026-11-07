@@ -4,6 +4,7 @@
 
 **The Cross-Platform Visual UI Editor for Rust & Go Desktop Frameworks**
 
+[![VS Code Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/c0mbit.ruxel-studio?style=flat&label=VS%20Code%20Marketplace&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=c0mbit.ruxel-studio)
 [![CI/CD Build & Publish](https://github.com/c0mbit/ruxel-studio/actions/workflows/release-publish.yml/badge.svg)](https://github.com/c0mbit/ruxel-studio/actions/workflows/release-publish.yml)
 [![License: MIT / Apache-2.0](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg)](LICENSE.md)
 [![Rust 2021](https://img.shields.io/badge/rust-2021%20edition-dea584?logo=rust)](https://www.rust-lang.org/)
@@ -195,30 +196,36 @@ ruxel-studio/
 
 ## Getting Started
 
-### Installation (via GitHub Releases)
+### Installation
 
-Ruxel Studio is distributed exclusively via **GitHub Releases** as a precompiled `.vsix` extension package bundling all native multi-platform daemons. Due to outages and instabilities on public marketplaces, distribution is handled directly via GitHub Releases.
+#### 1. Primary Method: Visual Studio Code Marketplace (Recommended)
 
-#### Step-by-Step Installation:
+The easiest and official way to install Ruxel Studio is directly from inside Visual Studio Code:
 
-1. **Download the Latest VSIX Package**:
-   - Navigate to [GitHub Releases](https://github.com/c0mbit/ruxel-studio/releases).
-   - Under the latest release assets (e.g. `v1.0.0`), download the compiled `ruxel-studio-*.vsix` file.
+1. Launch Visual Studio Code.
+2. Open the **Extensions** view (`Ctrl+Shift+X` on Windows/Linux or `Cmd+Shift+X` on macOS).
+3. Search for **`Ruxel Studio`** or **`c0mbit`**.
+4. Click **Install**.
+5. *Command-line shortcut*:
+   ```bash
+   code --install-extension c0mbit.ruxel-studio
+   ```
 
-2. **Install in Visual Studio Code**:
-   - Launch Visual Studio Code.
-   - Open the **Extensions** view (`Ctrl+Shift+X` on Windows/Linux or `Cmd+Shift+X` on macOS).
-   - Click the **Views and More Actions** menu (`...` triple dot in the top right of the Extensions panel).
-   - Select **Install from VSIX...**
-   - In the file dialog, select the downloaded `ruxel-studio-*.vsix` file and confirm.
-   - *Command-line alternative*:
-     ```bash
-     code --install-extension ruxel-studio-*.vsix
-     ```
+You can also install directly from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=c0mbit.ruxel-studio).
 
-3. **Verify Installation**:
-   - Reload or restart VS Code if prompted.
-   - Ruxel Studio will automatically initialize and detect the bundled platform daemons (`rux-daemon` and `rux-sync-server`).
+#### 2. Secondary Fallback: Manual VSIX Installation (GitHub Releases)
+
+For offline environments or custom distribution, precompiled packages are available on GitHub Releases:
+
+1. Navigate to [GitHub Releases](https://github.com/c0mbit/ruxel-studio/releases).
+2. Under the release assets, download the compiled `ruxel-studio-*.vsix` package.
+3. In VS Code, open the **Extensions** view (`Ctrl+Shift+X` / `Cmd+Shift+X`).
+4. Click the **Views and More Actions** menu (`...` in the top right corner of the Extensions panel).
+5. Select **Install from VSIX...** and choose the downloaded file.
+6. *Command-line alternative*:
+   ```bash
+   code --install-extension ruxel-studio-*.vsix
+   ```
 
 ### Building from Source (Local Development)
 
