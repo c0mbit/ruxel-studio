@@ -57,3 +57,7 @@ CHECKPOINT.md
 !bin/
 !**/bin/
 !**/bin/**
+# Internal agent configs
+GEMINI.md
+AGENTS.md
+.gemini/
