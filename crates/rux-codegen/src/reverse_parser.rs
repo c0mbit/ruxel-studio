@@ -248,13 +248,7 @@ impl ReverseParser {
                     let parser = Punctuated::<Expr, Token![,]>::parse_terminated;
                     if let Ok(punctuated) = parser.parse2(mac.tokens.clone()) {
                         let elements: Vec<Expr> = punctuated.into_iter().collect();
-                        let child_count = node.children.len().min(elements.len());
-
-                        for i in 0..child_count {
-                            let child_node = &mut node.children[i];
-                            let elem_expr = &elements[i];
-                            Self::reconcile_iced_widget(child_node, elem_expr, events, patches);
-                        }
+                        Self::reconcile_iced_children(node, &elements, events, patches);
                     }
                 }
             }
@@ -267,6 +261,153 @@ impl ReverseParser {
             }
             _ => {}
         }
+    }
+
+    fn reconcile_iced_children(
+        parent: &mut WidgetNode,
+        elements: &[Expr],
+        events: &[crate::events::BoundEvent],
+        patches: &mut Vec<PropertyPatch>,
+    ) {
+        let old_children = std::mem::take(&mut parent.children);
+        let mut assigned_old: Vec<bool> = vec![false; old_children.len()];
+        let mut element_matches: Vec<Option<usize>> = vec![None; elements.len()];
+
+        // Pass 1: Exact ID match via events (e.g. on_press UiMessage variant)
+        for (elem_idx, elem_expr) in elements.iter().enumerate() {
+            let call_info = unwrap_call_chain(elem_expr);
+            if let Some(target_id) = find_widget_id_from_calls(&call_info, events) {
+                if let Some(old_idx) = old_children
+                    .iter()
+                    .enumerate()
+                    .position(|(i, c)| !assigned_old[i] && c.id == target_id)
+                {
+                    element_matches[elem_idx] = Some(old_idx);
+                    assigned_old[old_idx] = true;
+                }
+            }
+        }
+
+        // Pass 2: Type AND text/placeholder match
+        for (elem_idx, elem_expr) in elements.iter().enumerate() {
+            if element_matches[elem_idx].is_some() {
+                continue;
+            }
+            let call_info = unwrap_call_chain(elem_expr);
+            let inferred_type = infer_iced_widget_type(&call_info);
+            let elem_text = extract_string_from_call_args(&call_info.base_args);
+
+            if let (Some(wtype), Some(ref text)) = (inferred_type, &elem_text) {
+                if let Some(old_idx) = old_children.iter().enumerate().position(|(i, c)| {
+                    if assigned_old[i] || c.widget_type != wtype {
+                        return false;
+                    }
+                    c.properties.text.as_deref() == Some(text.as_str())
+                        || c.properties.placeholder.as_deref() == Some(text.as_str())
+                }) {
+                    element_matches[elem_idx] = Some(old_idx);
+                    assigned_old[old_idx] = true;
+                }
+            }
+        }
+
+        // Pass 3: Same widget type match
+        for (elem_idx, elem_expr) in elements.iter().enumerate() {
+            if element_matches[elem_idx].is_some() {
+                continue;
+            }
+            let call_info = unwrap_call_chain(elem_expr);
+            if let Some(wtype) = infer_iced_widget_type(&call_info) {
+                if let Some(old_idx) = old_children
+                    .iter()
+                    .enumerate()
+                    .position(|(i, c)| !assigned_old[i] && c.widget_type == wtype)
+                {
+                    element_matches[elem_idx] = Some(old_idx);
+                    assigned_old[old_idx] = true;
+                }
+            }
+        }
+
+        // Pass 4: Fallback to matching remaining in position order if lengths match
+        if elements.len() == old_children.len() {
+            for (elem_idx, old_match) in element_matches.iter_mut().enumerate() {
+                if old_match.is_none() && !assigned_old[elem_idx] {
+                    *old_match = Some(elem_idx);
+                    assigned_old[elem_idx] = true;
+                }
+            }
+        }
+
+        // Record deletions for unassigned old children
+        for (i, assigned) in assigned_old.iter().enumerate() {
+            if !assigned {
+                patches.push(PropertyPatch {
+                    widget_id: old_children[i].id.clone(),
+                    property_name: "deleted".to_string(),
+                    old_value: Some(old_children[i].id.clone()),
+                    new_value: "none".to_string(),
+                });
+            }
+        }
+
+        let mut new_children = Vec::with_capacity(elements.len());
+        let mut existing_ids: std::collections::HashSet<String> =
+            old_children.iter().map(|c| c.id.clone()).collect();
+        let mut new_counter: usize = 1;
+
+        for (elem_idx, elem_expr) in elements.iter().enumerate() {
+            if let Some(old_idx) = element_matches[elem_idx] {
+                let mut child = old_children[old_idx].clone();
+                Self::reconcile_iced_widget(&mut child, elem_expr, events, patches);
+                new_children.push(child);
+            } else {
+                // New element added in code (e.g. prepended or appended)
+                let call_info = unwrap_call_chain(elem_expr);
+                let wtype = infer_iced_widget_type(&call_info).unwrap_or(WidgetType::Label);
+                let prefix = match wtype {
+                    WidgetType::Button => "btn",
+                    WidgetType::Label => "lbl",
+                    WidgetType::TextInput => "txt",
+                    WidgetType::Checkbox => "chk",
+                    WidgetType::RadioButton => "rad",
+                    WidgetType::VBox => "vbox",
+                    WidgetType::HBox => "hbox",
+                    _ => "node",
+                };
+
+                let mut new_id = format!("{}_{}", prefix, new_counter);
+                while existing_ids.contains(&new_id) {
+                    new_counter += 1;
+                    new_id = format!("{}_{}", prefix, new_counter);
+                }
+                existing_ids.insert(new_id.clone());
+                new_counter += 1;
+
+                let mut new_child = WidgetNode {
+                    id: new_id.clone(),
+                    widget_type: wtype,
+                    slot: None,
+                    properties: rux_ast::widget::WidgetProperties::default(),
+                    layout: None,
+                    events: rux_ast::widget::WidgetEvents::default(),
+                    bindings: rux_ast::widget::WidgetBindings::default(),
+                    animations: Vec::new(),
+                    children: Vec::new(),
+                };
+
+                Self::reconcile_iced_widget(&mut new_child, elem_expr, events, patches);
+                patches.push(PropertyPatch {
+                    widget_id: new_id,
+                    property_name: "created".to_string(),
+                    old_value: None,
+                    new_value: format!("{:?}", new_child.widget_type),
+                });
+                new_children.push(new_child);
+            }
+        }
+
+        parent.children = new_children;
     }
 
     fn reconcile_iced_widget(
@@ -576,6 +717,34 @@ fn unwrap_call_chain<'a>(expr: &'a Expr) -> UnwrappedCall<'a> {
         base_ident,
         base_args: Vec::new(),
         methods,
+    }
+}
+
+fn infer_iced_widget_type(call_info: &UnwrappedCall) -> Option<WidgetType> {
+    if let Expr::Macro(ExprMacro { mac, .. }) = call_info.base_expr {
+        let name = mac
+            .path
+            .segments
+            .last()
+            .map(|s| s.ident.to_string())
+            .unwrap_or_default();
+        if name == "column" {
+            return Some(WidgetType::VBox);
+        } else if name == "row" {
+            return Some(WidgetType::HBox);
+        }
+    }
+    match call_info.base_ident.as_str() {
+        "button" => Some(WidgetType::Button),
+        "text" => Some(WidgetType::Label),
+        "text_input" => Some(WidgetType::TextInput),
+        "checkbox" => Some(WidgetType::Checkbox),
+        "radio" => Some(WidgetType::RadioButton),
+        "slider" => Some(WidgetType::Slider),
+        "progress_bar" => Some(WidgetType::ProgressBar),
+        "container" => Some(WidgetType::VBox),
+        "scrollable" => Some(WidgetType::ScrollPane),
+        _ => None,
     }
 }
 
@@ -1161,5 +1330,51 @@ mod tests {
 
         assert_eq!(report.patched_nodes_count, 0);
         assert_eq!(report.patches.len(), 0);
+    }
+
+    #[test]
+    fn test_reverse_parse_iced_prepend_element() {
+        let mut doc = create_test_document();
+        assert_eq!(doc.root.children.len(), 4);
+        assert_eq!(doc.root.children[0].id, "btn_submit");
+
+        // User prepends a new Label before the Button in Rust code
+        let iced_code = r##"
+            pub fn view<'a>(state: &'a AppState) -> iced::Element<'a, UiMessage> {
+                use iced::widget::{button, checkbox, column, container, text, text_input};
+                column![
+                    text("New Header Notification"),
+                    button(text("Submit")).on_press(UiMessage::OnSubmit),
+                    text("Welcome"),
+                    text_input("Enter name", &state.txt_input).on_input(UiMessage::OnNameChange),
+                    checkbox("Accept terms", state.chk_agree).on_toggle(UiMessage::OnAgreeToggle)
+                ]
+                .spacing(8.0)
+                .into()
+            }
+        "##;
+
+        let report = ReverseParser::patch_document(&mut doc, iced_code, Some(TargetFramework::Iced))
+            .expect("Reverse parsing should succeed");
+
+        assert_eq!(doc.root.children.len(), 5);
+        // First element is newly created prepended label
+        assert_eq!(doc.root.children[0].id, "lbl_1");
+        assert_eq!(doc.root.children[0].properties.text.as_deref(), Some("New Header Notification"));
+        assert_eq!(doc.root.children[0].widget_type, WidgetType::Label);
+
+        // Second element is still btn_submit without being corrupted by positional index mismatch
+        assert_eq!(doc.root.children[1].id, "btn_submit");
+        assert_eq!(doc.root.children[1].widget_type, WidgetType::Button);
+        assert_eq!(doc.root.children[1].properties.text.as_deref(), Some("Submit"));
+
+        // Third element is lbl_status (matched via type + text "Welcome")
+        assert_eq!(doc.root.children[2].id, "lbl_status");
+        assert_eq!(doc.root.children[2].properties.text.as_deref(), Some("Welcome"));
+
+        assert_eq!(report.patched_nodes_count, 1);
+        assert_eq!(report.patches.len(), 2);
+        assert!(report.patches.iter().any(|p| p.property_name == "created"));
+        assert!(report.patches.iter().any(|p| p.property_name == "text"));
     }
 }

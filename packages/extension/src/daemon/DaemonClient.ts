@@ -1,6 +1,7 @@
 import * as child_process from "child_process";
 import * as vscode from "vscode";
 import {
+    type AstParseErrorPayload,
     type AstPatchedFromCodePayload,
     type DaemonCodegenParams,
     type DaemonCodegenResult,
@@ -48,6 +49,8 @@ export class DaemonClient implements vscode.Disposable {
         new vscode.EventEmitter<DaemonStatus>();
     private readonly astPatchedEmitter: vscode.EventEmitter<AstPatchedFromCodePayload> =
         new vscode.EventEmitter<AstPatchedFromCodePayload>();
+    private readonly astParseErrorEmitter: vscode.EventEmitter<AstParseErrorPayload> =
+        new vscode.EventEmitter<AstParseErrorPayload>();
     private restartTimeout: NodeJS.Timeout | null = null;
     private isExplicitlyDisposed: boolean = false;
 
@@ -55,6 +58,8 @@ export class DaemonClient implements vscode.Disposable {
         this.statusEmitter.event;
     public readonly onDidReceiveAstPatched: vscode.Event<AstPatchedFromCodePayload> =
         this.astPatchedEmitter.event;
+    public readonly onDidReceiveAstParseError: vscode.Event<AstParseErrorPayload> =
+        this.astParseErrorEmitter.event;
 
     constructor(private readonly extensionContext: vscode.ExtensionContext) {}
 
@@ -96,6 +101,13 @@ export class DaemonClient implements vscode.Disposable {
                 "rux/astPatchedFromCode",
                 (payload) => {
                     this.astPatchedEmitter.fire(payload);
+                }
+            );
+
+            this.connection.onNotification<AstParseErrorPayload>(
+                "rux/astParseError",
+                (payload) => {
+                    this.astParseErrorEmitter.fire(payload);
                 }
             );
 

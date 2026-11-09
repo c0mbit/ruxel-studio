@@ -321,6 +321,12 @@ export interface AstPatchedFromCodePayload {
     readonly patches?: readonly PropertyPatch[];
 }
 
+export interface AstParseErrorPayload {
+    readonly error: string;
+    readonly rux_path?: string;
+    readonly changed_file: string;
+}
+
 export interface DaemonWatchParams {
     readonly watch_dir: string;
     readonly rux_path?: string;

@@ -8,6 +8,7 @@ import {
     serializeRuxDocument,
 } from "@ruxel/shared-types";
 import { useEditorStore } from "../state/editorStore";
+import { useHistoryStore } from "../state/historyStore";
 import { vscodeApi } from "../vscode";
 
 function cleanPayloadText(rawText: string): string {
@@ -62,6 +63,7 @@ export function useExtensionIpc() {
                     );
                     break;
                 case "DOCUMENT_UPDATE":
+                    useHistoryStore.getState().clear();
                     updateDocumentFromExternal(
                         message.rawText,
                         message.document

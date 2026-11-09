@@ -1007,7 +1007,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "rux-ast"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "pretty_assertions",
  "serde",
@@ -1018,7 +1018,7 @@ dependencies = [
 
 [[package]]
 name = "rux-autopatch"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "rux-ast",
  "rux-codegen",
@@ -1030,7 +1030,7 @@ dependencies = [
 
 [[package]]
 name = "rux-codegen"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -1044,7 +1044,7 @@ dependencies = [
 
 [[package]]
 name = "rux-daemon"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "notify",
  "rux-ast",
@@ -1057,7 +1057,7 @@ dependencies = [
 
 [[package]]
 name = "rux-figma"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "pretty_assertions",
  "rux-ast",
@@ -1069,7 +1069,7 @@ dependencies = [
 
 [[package]]
 name = "rux-sync-server"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "axum",
  "bytes",

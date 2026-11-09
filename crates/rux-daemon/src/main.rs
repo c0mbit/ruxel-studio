@@ -314,7 +314,25 @@ impl AppContext {
 
         let report = match ReverseParser::patch_document(&mut doc, &code, Some(framework)) {
             Ok(r) => r,
-            Err(_) => return,
+            Err(err) => {
+                let notif_params = serde_json::json!({
+                    "error": err.to_string(),
+                    "rux_path": resolved_rux_path.to_string_lossy().to_string(),
+                    "changed_file": event.filename,
+                });
+                let notif = JsonRpcNotification {
+                    jsonrpc: "2.0",
+                    method: "rux/astParseError".to_string(),
+                    params: notif_params,
+                };
+                if let Ok(serialized) = serde_json::to_string(&notif) {
+                    if let Ok(mut out) = self.stdout_lock.lock() {
+                        let _ = writeln!(out, "{}", serialized);
+                        let _ = out.flush();
+                    }
+                }
+                return;
+            }
         };
 
         if report.patched_nodes_count > 0 {
