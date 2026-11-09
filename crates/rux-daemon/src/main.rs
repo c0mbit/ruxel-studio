@@ -546,20 +546,21 @@ fn handle_export_code(
     }
 
     if let Ok(()) = ctx.ensure_watcher() {
-        let mut watcher_opt = ctx.watcher.lock().unwrap();
-        if let Some(ref mut w) = *watcher_opt {
-            let _ = w.watch_dir(out_dir);
+        if let Ok(mut watcher_opt) = ctx.watcher.lock() {
+            if let Some(ref mut w) = *watcher_opt {
+                let _ = w.watch_dir(out_dir);
+            }
         }
-
-        let mut targets = ctx.watch_targets.lock().unwrap();
-        targets.insert(
-            out_dir.to_path_buf(),
-            WatchTargetState {
-                watch_dir: out_dir.to_path_buf(),
-                rux_path: export_params.rux_path.map(PathBuf::from),
-                framework,
-            },
-        );
+        if let Ok(mut targets) = ctx.watch_targets.lock() {
+            targets.insert(
+                out_dir.to_path_buf(),
+                WatchTargetState {
+                    watch_dir: out_dir.to_path_buf(),
+                    rux_path: export_params.rux_path.map(PathBuf::from),
+                    framework,
+                },
+            );
+        }
     }
 
     Ok(DaemonExportCodeResult {

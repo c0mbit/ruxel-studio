@@ -459,12 +459,10 @@ impl CodeGenerator for SlintPlugin {
                 match merge_controller(existing, events) {
                     Ok(merged) => merged,
                     Err(err) => {
-                        diagnostics.push(CodegenDiagnostic {
-                            level: "warning".to_string(),
-                            message: format!("Failed to merge existing controller: {}. Falling back to scaffold.", err),
-                            widget_id: None,
-                        });
-                        generate_initial_controller(events)
+                        return Err(CodegenError::SynParseError(format!(
+                            "Cannot overwrite controller.rs because existing code contains syntax errors: {}. Fix syntax errors before exporting.",
+                            err
+                        )));
                     }
                 }
             }

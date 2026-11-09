@@ -90,12 +90,25 @@ pub fn to_handler_name(input: &str) -> String {
 }
 
 pub fn make_ident(name: &str) -> Ident {
-    if let Some(raw) = name.strip_prefix("r#") {
-        syn::parse_str::<Ident>(&format!("r#{}", raw)).unwrap_or_else(|_| Ident::new("field", Span::call_site()))
-    } else if is_rust_keyword(name) {
-        syn::parse_str::<Ident>(&format!("r#{}", name)).unwrap_or_else(|_| Ident::new("field", Span::call_site()))
+    let mut sanitized = String::with_capacity(name.len() + 4);
+    for (i, ch) in name.chars().enumerate() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            if i == 0 && ch.is_ascii_digit() {
+                sanitized.push('_');
+            }
+            sanitized.push(ch);
+        } else {
+            sanitized.push('_');
+        }
+    }
+    let trimmed = sanitized.trim_matches('_');
+    let candidate = if trimmed.is_empty() { "widget_node" } else { trimmed };
+    if is_rust_keyword(candidate) || candidate == "crate" || candidate == "self" || candidate == "super" || candidate == "Self" {
+        syn::parse_str::<Ident>(&format!("r#{}", candidate))
+            .unwrap_or_else(|_| Ident::new("field_item", Span::call_site()))
     } else {
-        Ident::new(name, Span::call_site())
+        syn::parse_str::<Ident>(candidate)
+            .unwrap_or_else(|_| Ident::new("field_item", Span::call_site()))
     }
 }
 

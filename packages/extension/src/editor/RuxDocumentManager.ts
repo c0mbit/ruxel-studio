@@ -230,53 +230,30 @@ export class RuxDocumentManager implements vscode.Disposable {
     private async handleAstPatchedFromCode(
         payload: AstPatchedFromCodePayload
     ): Promise<void> {
-        if (this.isDisposed) {
-            return;
-        }
-
+        if (this.isDisposed) return;
+        if (!payload.rux_path) return;
         const currentFsPath = path.normalize(this.document.uri.fsPath).toLowerCase();
-        let matchesDocument = false;
-        if (payload.rux_path) {
-            matchesDocument =
-                path.normalize(payload.rux_path).toLowerCase() === currentFsPath;
-        } else {
-            matchesDocument = true;
-        }
-
-        if (!matchesDocument) {
+        const payloadPath = path.normalize(payload.rux_path).toLowerCase();
+        if (currentFsPath !== payloadPath) return;
+        
+        // Reject disk patch if the user has dirty, unsaved changes in the editor
+        if (this.document.isDirty) {
+            void vscode.window.showWarningMessage(
+                "Ruxel Studio: Reverse synchronization paused. Save your active .rux changes first to prevent overwriting."
+            );
             return;
         }
-
+        
         const newRawText = JSON.stringify(payload.document, null, 2);
-        if (newRawText === this.document.getText()) {
-            return;
-        }
-
+        if (newRawText === this.document.getText()) return;
         this.lastSentText = newRawText;
-
         const entireRange = new vscode.Range(
             this.document.positionAt(0),
             this.document.positionAt(this.document.getText().length)
         );
-
         const edit = new vscode.WorkspaceEdit();
         edit.replace(this.document.uri, entireRange, newRawText);
-
-        const applied = await vscode.workspace.applyEdit(edit);
-        if (applied) {
-            void this.document.save();
-        }
-
-        this.postMessage({
-            type: "AST_UPDATED_FROM_CODE",
-            document: payload.document,
-            rawText: newRawText,
-            changedFile: payload.changed_file,
-            timestamp: payload.timestamp,
-            patches: payload.patches,
-        });
-
-        this.scheduleValidation(newRawText);
+        await vscode.workspace.applyEdit(edit);
     }
 
     private async applyWebviewDocumentChange(
