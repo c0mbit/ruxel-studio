@@ -72,7 +72,7 @@ export class RuxDocumentManager implements vscode.Disposable {
                     const payloadPath = path.normalize(payload.rux_path).toLowerCase();
                     if (currentFsPath !== payloadPath) return;
                 }
-                void vscode.window.showErrorMessage("Ruxel Studio: Syntax error in code. Visual sync paused until fixed.");
+                void vscode.window.showErrorMessage("Ruxel Studio: Syntax error detected. Visual sync paused until fixed.");
             })
         );
     }

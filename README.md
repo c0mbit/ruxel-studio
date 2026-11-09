@@ -12,7 +12,7 @@
 
 Ruxel Studio is a native VS Code extension that provides a visual drag-and-drop canvas for building desktop GUIs in Rust and Go. It aims to eliminate the need for manual coordinate tweaking and constant recompilation when designing layouts.
 
-**Current Status:** Alpha (v0.1.1). The core engine works, but expect bugs and missing edge cases.
+**Current Status:** Alpha (v0.1.3). The core engine works, but expect bugs and missing edge cases.
 
 ## Features
 

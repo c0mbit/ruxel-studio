@@ -55,6 +55,7 @@ export function useExtensionIpc() {
 
             switch (message.type) {
                 case "DOCUMENT_INIT":
+                    useHistoryStore.getState().clear();
                     setInitialDocument(
                         message.rawText,
                         message.document,
