@@ -1,9 +1,12 @@
 [package]
 name = "rux-codegen"
-version.workspace = true
+version = "0.5.0"
 edition.workspace = true
 license.workspace = true
 description = "Code generation and View-Controller binding engine for Ruxel Studio"
+
+[lints]
+workspace = true
 
 [dependencies]
 rux-ast = { path = "../rux-ast" }
@@ -14,6 +17,8 @@ prettyplease = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+dioxus-rsx = "0.5"
+syn2 = { package = "syn", version = "2.0", features = ["full", "parsing"] }
 
 [[test]]
 name = "animation_codegen_tests"
@@ -32,6 +37,10 @@ name = "advanced_widgets_tests"
 path = "tests/premium_widgets_tests.rs"
 
 [[test]]
-name = "syn_parser_tests"
+name = "reverse_parser_tests"
 path = "tests/reverse_parser_tests.rs"
+
+[[test]]
+name = "phase1_wild_ast_tests"
+path = "tests/phase1_wild_ast_tests.rs"
 

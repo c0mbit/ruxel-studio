@@ -1,10 +1,11 @@
 {
   "name": "@ruxel/webview",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build"
+    "build": "tsc && vite build",
+    "test": "node --experimental-strip-types test/phase2_ui_inspector.test.ts && node --experimental-strip-types test/phase5_enterprise_features.test.ts && node --experimental-strip-types test/phase8_responsive_preview.test.ts && node --experimental-strip-types test/phase10_undo_redo_crdt.test.ts"
   },
   "dependencies": {
     "@ruxel/shared-types": "*",

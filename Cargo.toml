@@ -8,9 +8,14 @@ members = [
     "crates/rux-sync-server",
     "crates/rux-autopatch",
 ]
+exclude = [
+    "examples/iced_todo_app",
+    "examples/dioxus_dashboard",
+    "examples/egui_settings_panel",
+]
 
 [workspace.package]
-version = "0.1.4"
+version = "0.5.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ruxel-studio/ruxel-studio"
@@ -25,3 +30,7 @@ quote = "1.0"
 proc-macro2 = "1.0"
 prettyplease = "0.3"
 notify = "6.1"
+yrs = { version = "=0.21.0", default-features = false, features = ["sync"] }
+
+[workspace.lints.clippy]
+field_reassign_with_default = "allow"
