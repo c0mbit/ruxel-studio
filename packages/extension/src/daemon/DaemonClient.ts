@@ -7,6 +7,10 @@ import {
     type DaemonCodegenResult,
     type DaemonCompileWasmParams,
     type DaemonCompileWasmResult,
+    type DaemonCrdtApplyDeltaParams,
+    type DaemonCrdtApplyDeltaResult,
+    type DaemonCrdtSyncParams,
+    type DaemonCrdtSyncResult,
     type DaemonExportCodeParams,
     type DaemonExportCodeResult,
     type DaemonFormatParams,
@@ -15,6 +19,8 @@ import {
     type DaemonImportAssetResult,
     type DaemonImportFigmaParams,
     type DaemonImportFigmaResult,
+    type DaemonPatchMultiFileParams,
+    type DaemonPatchMultiFileResult,
     type DaemonReverseParseParams,
     type DaemonReverseParseResult,
     type DaemonStatus,
@@ -391,12 +397,75 @@ export class DaemonClient implements vscode.Disposable {
         );
     }
 
+    public async patchMultiFile(
+        params: DaemonPatchMultiFileParams
+    ): Promise<DaemonPatchMultiFileResult> {
+        if (!this.connection || this.currentStatus !== "connected") {
+            throw new Error("rux-daemon is not connected");
+        }
+
+        return this.connection.sendRequest<
+            DaemonPatchMultiFileResult,
+            DaemonPatchMultiFileParams
+        >("rux/patchMultiFile", params);
+    }
+
+    public async crdtSync(
+        params: DaemonCrdtSyncParams
+    ): Promise<DaemonCrdtSyncResult> {
+        if (!this.connection || this.currentStatus !== "connected") {
+            throw new Error("rux-daemon is not connected");
+        }
+
+        return this.connection.sendRequest<
+            DaemonCrdtSyncResult,
+            DaemonCrdtSyncParams
+        >("rux/crdtSync", params);
+    }
+
+    public async crdtApplyDelta(
+        params: DaemonCrdtApplyDeltaParams
+    ): Promise<DaemonCrdtApplyDeltaResult> {
+        if (!this.connection || this.currentStatus !== "connected") {
+            throw new Error("rux-daemon is not connected");
+        }
+
+        return this.connection.sendRequest<
+            DaemonCrdtApplyDeltaResult,
+            DaemonCrdtApplyDeltaParams
+        >("rux/crdtApplyDelta", params);
+    }
+
     public async version(): Promise<DaemonVersionResult> {
         if (!this.connection) {
             throw new Error("rux-daemon is not running");
         }
 
         return this.connection.sendRequest<DaemonVersionResult>("rux/version");
+    }
+
+    public async setTelemetryOptIn(enabled: boolean): Promise<boolean> {
+        if (!this.connection || this.currentStatus !== "connected") {
+            return false;
+        }
+        const result = await this.connection.sendRequest<
+            { success: boolean; enabled: boolean },
+            { enabled: boolean }
+        >("rux/setTelemetryOptIn", { enabled });
+        return result.enabled;
+    }
+
+    public async getTelemetryStatus(): Promise<{
+        enabled: boolean;
+        client_id: string;
+        session_id: string;
+        log_path: string;
+        reports_recorded: number;
+    } | null> {
+        if (!this.connection || this.currentStatus !== "connected") {
+            return null;
+        }
+        return this.connection.sendRequest("rux/telemetryStatus");
     }
 
     public async restart(): Promise<void> {

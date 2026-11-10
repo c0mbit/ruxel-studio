@@ -44,10 +44,10 @@ async fn handle_socket(
     let outgoing_client_id = client_id.clone();
     let mut send_task = tokio::spawn(async move {
         while let Ok(event) = rx.recv().await {
-            if event.sender_id != outgoing_client_id {
-                if ws_tx.send(Message::Binary(event.payload.into())).await.is_err() {
-                    break;
-                }
+            if event.sender_id != outgoing_client_id
+                && ws_tx.send(Message::Binary(event.payload.into())).await.is_err()
+            {
+                break;
             }
         }
     });

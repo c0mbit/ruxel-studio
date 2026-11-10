@@ -111,6 +111,72 @@ impl FigmaEngine {
         })
     }
 
+    pub fn import_from_json(&self, json_str: &str) -> Result<FigmaImportEngineResult, FigmaError> {
+        let trimmed = json_str.trim();
+        if trimmed.is_empty() {
+            return Err(FigmaError::InvalidJson("Empty Figma JSON input".to_string()));
+        }
+
+        if let Ok(node) = serde_json::from_str::<FigmaNode>(trimmed) {
+            let name = if node.name.is_empty() { "FigmaImport" } else { &node.name };
+            let (doc, count) = self.build_rux_document(name, &node, DownloadedAssetsReport::default())?;
+            return Ok(FigmaImportEngineResult {
+                document: doc,
+                imported_node_count: count,
+                assets_downloaded: Vec::new(),
+                warnings: Vec::new(),
+            });
+        }
+
+        let val: serde_json::Value = serde_json::from_str(trimmed)
+            .map_err(|e| FigmaError::InvalidJson(format!("Invalid Figma JSON: {}", e)))?;
+
+        let (name, node) = Self::extract_figma_node_from_value(&val)
+            .ok_or_else(|| FigmaError::InvalidJson("Could not locate valid Figma node in JSON payload".to_string()))?;
+
+        let (doc, count) = self.build_rux_document(&name, &node, DownloadedAssetsReport::default())?;
+        Ok(FigmaImportEngineResult {
+            document: doc,
+            imported_node_count: count,
+            assets_downloaded: Vec::new(),
+            warnings: Vec::new(),
+        })
+    }
+
+    fn extract_figma_node_from_value(val: &serde_json::Value) -> Option<(String, FigmaNode)> {
+        if let Some(doc_val) = val.get("document") {
+            if let Ok(node) = serde_json::from_value::<FigmaNode>(doc_val.clone()) {
+                let name = val.get("name").and_then(|v| v.as_str()).unwrap_or(&node.name).to_string();
+                return Some((name, node));
+            }
+        }
+
+        if let Some(nodes_obj) = val.get("nodes").and_then(|v| v.as_object()) {
+            for (_, wrapper_val) in nodes_obj {
+                if let Some(doc_val) = wrapper_val.get("document") {
+                    if let Ok(node) = serde_json::from_value::<FigmaNode>(doc_val.clone()) {
+                        let name = val.get("name").and_then(|v| v.as_str()).unwrap_or(&node.name).to_string();
+                        return Some((name, node));
+                    }
+                }
+            }
+        }
+
+        if let Some(node_val) = val.get("node") {
+            if let Ok(node) = serde_json::from_value::<FigmaNode>(node_val.clone()) {
+                let name = val.get("name").and_then(|v| v.as_str()).unwrap_or(&node.name).to_string();
+                return Some((name, node));
+            }
+        }
+
+        if let Ok(node) = serde_json::from_value::<FigmaNode>(val.clone()) {
+            let name = if node.name.is_empty() { "FigmaImport".to_string() } else { node.name.clone() };
+            return Some((name, node));
+        }
+
+        None
+    }
+
     pub fn build_rux_document(
         &self,
         file_name: &str,
@@ -182,6 +248,7 @@ impl FigmaEngine {
             i18n: None,
             theme,
             root: root_widget,
+            components: std::collections::BTreeMap::new(),
         };
 
         Ok((document, total_nodes))
@@ -214,10 +281,7 @@ impl FigmaEngine {
             };
         }
 
-        let is_auto_layout = match node.layout_mode.as_deref() {
-            Some("HORIZONTAL") | Some("VERTICAL") => true,
-            _ => false,
-        };
+        let is_auto_layout = matches!(node.layout_mode.as_deref(), Some("HORIZONTAL") | Some("VERTICAL"));
 
         let children = if is_auto_layout {
             node.children
@@ -229,7 +293,7 @@ impl FigmaEngine {
             let parent_box = node
                 .absolute_bounding_box
                 .clone()
-                .unwrap_or_else(|| FigmaBoundingBox {
+                .unwrap_or(FigmaBoundingBox {
                     x: 0.0,
                     y: 0.0,
                     width: 1200.0,
@@ -238,7 +302,7 @@ impl FigmaEngine {
 
             let mut child_nodes_with_boxes = Vec::new();
             for child in node.children.iter().filter(|c| c.visible) {
-                let box_clone = child.absolute_bounding_box.clone().unwrap_or_else(|| {
+                let box_clone = child.absolute_bounding_box.clone().unwrap_or({
                     FigmaBoundingBox {
                         x: parent_box.x,
                         y: parent_box.y,

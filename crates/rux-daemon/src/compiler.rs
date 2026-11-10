@@ -60,13 +60,13 @@ impl WasmCompiler {
         let state_clone = Arc::clone(&initial_state);
 
         thread::spawn(move || {
-            for stream in listener.incoming() {
-                if let Ok(stream) = stream {
-                    let state = Arc::clone(&state_clone);
-                    thread::spawn(move || {
-                        let _ = Self::handle_http_client(stream, state);
-                    });
-                }
+            for stream in listener.incoming().flatten() {
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+                let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(5)));
+                let state = Arc::clone(&state_clone);
+                thread::spawn(move || {
+                    let _ = Self::handle_http_client(stream, state);
+                });
             }
         });
 

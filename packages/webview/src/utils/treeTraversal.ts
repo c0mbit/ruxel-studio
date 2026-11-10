@@ -38,7 +38,14 @@ export function findNodePath(
     const item: BreadcrumbItem = {
         id: root.id,
         widgetType: root.widget_type,
-        name: root.properties?.text ?? root.id,
+        name:
+            typeof root.properties?.text === "string"
+                ? root.properties.text
+                : typeof root.properties?.text === "object" &&
+                  root.properties.text &&
+                  "value" in root.properties.text
+                ? String((root.properties.text as { value: unknown }).value)
+                : root.id,
     };
     const nextPath = [...currentPath, item];
 
@@ -161,6 +168,21 @@ export function moveNode(
 
     const withoutNode = removeChild(root, nodeId);
     return insertChild(withoutNode, newParentId, nodeToMove, insertIndex);
+}
+
+export function isDescendant(
+    root: WidgetNode,
+    ancestorId: string,
+    targetId: string
+): boolean {
+    if (ancestorId === targetId) {
+        return true;
+    }
+    const ancestor = findNodeById(root, ancestorId);
+    if (!ancestor) {
+        return false;
+    }
+    return Boolean(findNodeById(ancestor, targetId));
 }
 
 export function reorderChild(
@@ -526,6 +548,68 @@ export function safeParseJson(text: string): {
         const message = err instanceof Error ? err.message : String(err);
         return { document: null, error: message };
     }
+}
+
+export function extractComponentFromNode(
+    doc: RuxDocument,
+    nodeId: string,
+    componentName: string
+): { doc: RuxDocument; extractedNode: WidgetNode } | null {
+    if (doc.root.id === nodeId) {
+        return null;
+    }
+    const targetNode = findNodeById(doc.root, nodeId);
+    if (!targetNode) {
+        return null;
+    }
+
+    const snakeName = componentName
+        .replace(/([A-Z])/g, "_$1")
+        .toLowerCase()
+        .replace(/^_/, "");
+
+    const customInstanceNode: WidgetNode = {
+        id: `${snakeName}_inst`,
+        widget_type: "custom_component",
+        properties: {
+            custom_type: componentName,
+            raw_args: `${componentName}::new()`,
+        },
+        children: [],
+        events: {},
+        bindings: {},
+        animations: [],
+    };
+
+    function replaceNodeInTree(current: WidgetNode): WidgetNode {
+        if (current.id === nodeId) {
+            return customInstanceNode;
+        }
+        if (!current.children) {
+            return current;
+        }
+        return {
+            ...current,
+            children: current.children.map(replaceNodeInTree),
+        };
+    }
+
+    const updatedRoot = replaceNodeInTree(doc.root);
+    const existingComponents = doc.components ? { ...doc.components } : {};
+    existingComponents[componentName] = {
+        name: componentName,
+        root: targetNode,
+        file_path: `src/components/${snakeName}.rs`,
+    };
+
+    return {
+        doc: {
+            ...doc,
+            root: updatedRoot,
+            components: existingComponents,
+        },
+        extractedNode: targetNode,
+    };
 }
 
 export function formatJson(text: string): string {

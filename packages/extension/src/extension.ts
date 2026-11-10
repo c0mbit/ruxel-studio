@@ -152,6 +152,86 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         })
     );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand("ruxel.toggleTelemetry", async () => {
+            const config = vscode.workspace.getConfiguration("ruxel");
+            const current = config.get<boolean>("telemetry.enabled", false);
+            const updated = !current;
+            await config.update(
+                "telemetry.enabled",
+                updated,
+                vscode.ConfigurationTarget.Global
+            );
+            await daemonClient.setTelemetryOptIn(updated);
+            void vscode.window.showInformationMessage(
+                `Ruxel anonymous crash telemetry is now ${updated ? "ENABLED" : "DISABLED"}.`
+            );
+        })
+    );
+
+    await initializeTelemetry(context, daemonClient);
+}
+
+async function initializeTelemetry(
+    context: vscode.ExtensionContext,
+    daemonClient: DaemonClient
+): Promise<void> {
+    const TELEMETRY_PROMPTED_KEY = "ruxel.telemetryPrompted";
+    const config = vscode.workspace.getConfiguration("ruxel");
+
+    const hasPrompted = context.globalState.get<boolean>(TELEMETRY_PROMPTED_KEY, false);
+
+    const syncWithDaemon = async (enabled: boolean) => {
+        try {
+            await daemonClient.setTelemetryOptIn(enabled);
+        } catch {
+            // Daemon may still be launching
+        }
+    };
+
+    if (!hasPrompted) {
+        void (async () => {
+            const choice = await vscode.window.showInformationMessage(
+                "Help improve Ruxel Studio by sharing anonymous parsing crash reports.",
+                "Yes, Opt In",
+                "No Thanks"
+            );
+            const optIn = choice === "Yes, Opt In";
+            await context.globalState.update(TELEMETRY_PROMPTED_KEY, true);
+            await config.update(
+                "telemetry.enabled",
+                optIn,
+                vscode.ConfigurationTarget.Global
+            );
+            await syncWithDaemon(optIn);
+        })();
+    } else {
+        const isEnabled = config.get<boolean>("telemetry.enabled", false);
+        void syncWithDaemon(isEnabled);
+    }
+
+    context.subscriptions.push(
+        daemonClient.onDidChangeStatus((status) => {
+            if (status === "connected") {
+                const isEnabled = vscode.workspace
+                    .getConfiguration("ruxel")
+                    .get<boolean>("telemetry.enabled", false);
+                void syncWithDaemon(isEnabled);
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(async (event) => {
+            if (event.affectsConfiguration("ruxel.telemetry.enabled")) {
+                const isEnabled = vscode.workspace
+                    .getConfiguration("ruxel")
+                    .get<boolean>("telemetry.enabled", false);
+                await syncWithDaemon(isEnabled);
+            }
+        })
+    );
 }
 
 export function deactivate(): void {}

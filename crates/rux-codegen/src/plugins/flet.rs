@@ -278,7 +278,7 @@ impl FletPlugin {
                         .properties
                         .text
                         .as_deref()
-                        .unwrap_or_else(|| node.id.as_str());
+                        .unwrap_or(node.id.as_str());
                     format!("\"{}\"", raw)
                 };
 
@@ -324,7 +324,7 @@ impl FletPlugin {
                         .properties
                         .text
                         .as_deref()
-                        .unwrap_or_else(|| node.id.as_str());
+                        .unwrap_or(node.id.as_str());
                     out.push_str(&format!("ft.Text(value=\"{}\"{})", txt, tooltip_attr));
                 }
             }
@@ -364,7 +364,7 @@ impl FletPlugin {
                     .properties
                     .text
                     .as_deref()
-                    .unwrap_or_else(|| node.id.as_str());
+                    .unwrap_or(node.id.as_str());
 
                 let prop_name = if let Some(binding) = &node.bindings.value {
                     to_snake_case(binding)
@@ -394,7 +394,7 @@ impl FletPlugin {
                     .properties
                     .text
                     .as_deref()
-                    .unwrap_or_else(|| node.id.as_str());
+                    .unwrap_or(node.id.as_str());
                 out.push_str(&format!("ft.Radio(label=\"{}\")", label));
             }
             WidgetType::Slider => {
@@ -489,7 +489,7 @@ impl FletPlugin {
                     .unwrap_or("assets/image.png");
                 out.push_str(&format!("ft.Image(src=\"{}\")", img_path));
             }
-            WidgetType::Canvas3D | _ => {
+            _ => {
                 out.push_str("ft.Container(bgcolor=\"#18181b\", expand=True)");
             }
         }
@@ -613,6 +613,12 @@ impl FletPlugin {
         }
 
         merged
+    }
+}
+
+impl Default for FletPlugin {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

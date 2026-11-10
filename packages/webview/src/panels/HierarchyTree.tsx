@@ -1,5 +1,5 @@
 import { FC, useState, useEffect, useCallback, useRef } from "react";
-import type { WidgetNode } from "@ruxel/shared-types";
+import { type WidgetNode, serializeRuxDocument } from "@ruxel/shared-types";
 import { useEditorStore } from "../state/editorStore";
 import { useDocumentMutation } from "../hooks/useDocumentMutation";
 import {
@@ -9,6 +9,7 @@ import {
     moveNode,
     duplicateNode,
     findChildIndex,
+    extractComponentFromNode,
 } from "../utils/treeTraversal";
 import {
     getWidgetTypeLabel,
@@ -110,6 +111,36 @@ export const HierarchyTree: FC<HierarchyTreeProps> = ({
             );
         },
         [document, executeNodeMutation]
+    );
+
+    const handleExtractComponent = useCallback(
+        (nodeId: string) => {
+            if (!document) {
+                return;
+            }
+            if (nodeId === document.root.id) {
+                return;
+            }
+
+            const defaultName = `Custom${nodeId.charAt(0).toUpperCase() + nodeId.slice(1).replace(/[^a-zA-Z0-9]/g, "")}`;
+            const compName = window.prompt("Enter name for extracted component:", defaultName);
+            if (!compName || !compName.trim()) {
+                return;
+            }
+
+            const cleanName = compName.trim();
+            const result = extractComponentFromNode(document, nodeId, cleanName);
+            if (!result) {
+                return;
+            }
+
+            executeNodeMutation(`Extract ${nodeId} to <${cleanName} />`, () => result.doc.root);
+            useEditorStore.getState().updateDocumentFromExternal(serializeRuxDocument(result.doc), result.doc);
+            if (onDocumentChange) {
+                onDocumentChange(serializeRuxDocument(result.doc), `Extract to Component: ${cleanName}`);
+            }
+        },
+        [document, executeNodeMutation, onDocumentChange]
     );
 
     const handleToggleVisibility = useCallback(
@@ -338,8 +369,35 @@ export const HierarchyTree: FC<HierarchyTreeProps> = ({
                     onToggleDisabled={handleToggleDisabled}
                     onDelete={handleDeleteNode}
                     onDuplicate={handleDuplicateNode}
+                    onExtractComponent={handleExtractComponent}
                     isRoot
                 />
+
+                {document?.components && Object.keys(document.components).length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-zinc-800 px-3">
+                        <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-2 flex items-center justify-between">
+                            <span>Extracted Components</span>
+                            <span className="bg-indigo-950 text-indigo-400 border border-indigo-800 px-1.5 py-0.2 rounded-full text-[9px]">
+                                {Object.keys(document.components).length}
+                            </span>
+                        </div>
+                        <div className="space-y-1">
+                            {Object.entries(document.components).map(([name, comp]) => (
+                                <div
+                                    key={name}
+                                    className="flex items-center justify-between px-2 py-1 bg-zinc-800/40 rounded text-xs text-zinc-300 hover:bg-zinc-800 transition-colors"
+                                >
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-indigo-400 font-mono text-[11px]">&lt;{name} /&gt;</span>
+                                    </div>
+                                    <span className="text-[9px] text-zinc-500 font-mono truncate max-w-[120px]">
+                                        {(comp as { file_path?: string })?.file_path || `${name}.rs`}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -362,6 +420,7 @@ interface TreeNodeRowProps {
     readonly onToggleDisabled: (nodeId: string) => void;
     readonly onDelete: (nodeId: string) => void;
     readonly onDuplicate: (nodeId: string) => void;
+    readonly onExtractComponent: (nodeId: string) => void;
     readonly isRoot?: boolean;
 }
 
@@ -382,6 +441,7 @@ const TreeNodeRow: FC<TreeNodeRowProps> = ({
     onToggleDisabled,
     onDelete,
     onDuplicate,
+    onExtractComponent,
     isRoot,
 }) => {
     const hasChildren = (node.children?.length ?? 0) > 0;
@@ -401,7 +461,7 @@ const TreeNodeRow: FC<TreeNodeRowProps> = ({
         <div>
             {isDropBefore && (
                 <div
-                    className="h-0.5 bg-blue-500 mx-2 rounded-full"
+                    className="h-1 bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)] mx-2 rounded-full"
                     style={{ marginLeft: `${depth * 16 + 8}px` }}
                 />
             )}
@@ -420,7 +480,11 @@ const TreeNodeRow: FC<TreeNodeRowProps> = ({
                     isSelected
                         ? "bg-blue-600/25 text-blue-300 ring-1 ring-blue-500/40"
                         : "text-zinc-300 hover:bg-zinc-800/80"
-                } ${isDropInside ? "ring-1 ring-blue-400 bg-blue-950/30" : ""} ${
+                } ${
+                    isDropInside
+                        ? "ring-2 ring-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.5)] bg-blue-500/20 text-blue-200"
+                        : ""
+                } ${
                     isHidden ? "opacity-40" : ""
                 }`}
                 style={{ paddingLeft: `${depth * 16 + 8}px` }}
@@ -546,6 +610,30 @@ const TreeNodeRow: FC<TreeNodeRowProps> = ({
                                 type="button"
                                 onClick={(e) => {
                                     e.stopPropagation();
+                                    onExtractComponent(node.id);
+                                }}
+                                className="w-5 h-5 flex items-center justify-center rounded hover:bg-indigo-900/60 text-zinc-500 hover:text-indigo-400"
+                                title="Extract to Component"
+                            >
+                                <svg
+                                    className="w-3 h-3"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                    strokeWidth={2}
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7C5 4 4 5 4 7zm4 4h8m-8 4h5"
+                                    />
+                                </svg>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
                                     onDelete(node.id);
                                 }}
                                 className="w-5 h-5 flex items-center justify-center rounded hover:bg-rose-900/60 text-zinc-500 hover:text-rose-400"
@@ -572,7 +660,7 @@ const TreeNodeRow: FC<TreeNodeRowProps> = ({
 
             {isDropAfter && (
                 <div
-                    className="h-0.5 bg-blue-500 mx-2 rounded-full"
+                    className="h-1 bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)] mx-2 rounded-full"
                     style={{ marginLeft: `${depth * 16 + 8}px` }}
                 />
             )}
@@ -598,6 +686,7 @@ const TreeNodeRow: FC<TreeNodeRowProps> = ({
                         onToggleDisabled={onToggleDisabled}
                         onDelete={onDelete}
                         onDuplicate={onDuplicate}
+                        onExtractComponent={onExtractComponent}
                     />
                 ))}
         </div>

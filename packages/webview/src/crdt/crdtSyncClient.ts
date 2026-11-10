@@ -8,7 +8,7 @@ import type {
     RoomConnectionStatus,
     SyncServerConfig,
 } from "@ruxel/shared-types";
-import { CRDT_ORIGIN_LOCAL, CRDT_ORIGIN_REMOTE, CrdtDocumentBridge } from "./crdtBridge";
+import { CRDT_ORIGIN_LOCAL, CRDT_ORIGIN_REMOTE, CrdtDocumentBridge } from "./crdtBridge.ts";
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
@@ -28,6 +28,11 @@ export class CrdtSyncClient {
         this.bridge = bridge;
         this.ydoc = bridge.getYDoc();
         this.awareness = new awarenessProtocol.Awareness(this.ydoc);
+        // In Node.js environments (tests/CLI), unref the awareness check interval to prevent hanging event loops
+        const checkInterval = (this.awareness as unknown as { _checkInterval?: { unref?: () => void } })._checkInterval;
+        if (checkInterval && typeof checkInterval.unref === "function") {
+            checkInterval.unref();
+        }
 
         this.ydoc.on("update", (update: Uint8Array, origin: unknown) => {
             if (origin !== CRDT_ORIGIN_REMOTE && this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -137,6 +142,11 @@ export class CrdtSyncClient {
         this.setStatus("disconnected");
         this.awareness.setLocalState(null);
         this.notifyPeersChanged();
+    }
+
+    public destroy(): void {
+        this.disconnect();
+        this.awareness.destroy();
     }
 
     public updateCursor(x: number, y: number): void {

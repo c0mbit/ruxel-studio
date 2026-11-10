@@ -2,6 +2,7 @@ import { FC, useCallback, useState, useMemo } from "react";
 import type {
     WidgetNode,
     WidgetProperties,
+    PropertyValue,
     FontWeight,
     TextAlign,
     TableColumn,
@@ -11,6 +12,11 @@ import type {
 import { useEditorStore } from "../../state/editorStore";
 import { useDocumentMutation } from "../../hooks/useDocumentMutation";
 import { findNodeById } from "../../utils/treeTraversal";
+import {
+    ColorPickerInput,
+    EnumSelectInput,
+    SliderInput,
+} from "../../components/inputs";
 
 interface PropertiesTabProps {
     readonly onDocumentChange?: (rawText: string, summary?: string) => void;
@@ -92,6 +98,96 @@ const STANDARD_FONT_FAMILIES = [
     "sans-serif",
 ] as const;
 
+function isBindingValue(val: unknown): boolean {
+    if (!val) return false;
+    if (typeof val === "object") {
+        const obj = val as Record<string, unknown>;
+        if (obj.type === "binding" || "binding" in obj) return true;
+    }
+    return false;
+}
+
+function extractPropString(val: unknown): string {
+    if (val === undefined || val === null) return "";
+    if (typeof val === "string") return val;
+    if (typeof val === "object") {
+        const obj = val as Record<string, unknown>;
+        if ("value" in obj && typeof obj.value === "string") return obj.value;
+        if ("static" in obj && typeof obj.static === "string") return obj.static;
+        if ("binding" in obj && typeof obj.binding === "string") return obj.binding;
+    }
+    return String(val);
+}
+
+interface BoundPropertyRowProps {
+    readonly label: string;
+    readonly value: unknown;
+    readonly onChange: (value: PropertyValue) => void;
+    readonly renderStatic: () => React.ReactNode;
+    readonly defaultBindingVar?: string;
+}
+
+const BoundPropertyRow: FC<BoundPropertyRowProps> = ({
+    label,
+    value,
+    onChange,
+    renderStatic,
+    defaultBindingVar = "self.variable",
+}) => {
+    const isBinding = isBindingValue(value);
+    const strVal = extractPropString(value);
+
+    return (
+        <PropertyRow label={label}>
+            <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                {isBinding ? (
+                    <div className="relative flex-1 min-w-0">
+                        <input
+                            type="text"
+                            value={strVal}
+                            placeholder="e.g. self.var_name"
+                            onChange={(e) =>
+                                onChange({ type: "binding", value: e.target.value })
+                            }
+                            className="w-full h-6 px-2 pr-10 rounded bg-zinc-950 border border-cyan-500/70 font-mono text-xs text-cyan-200 outline-none focus:border-cyan-400"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-mono text-cyan-400/80 pointer-events-none select-none">
+                            bind
+                        </span>
+                    </div>
+                ) : (
+                    <div className="flex-1 min-w-0">{renderStatic()}</div>
+                )}
+                <button
+                    type="button"
+                    title={
+                        isBinding
+                            ? "Switch to Static literal"
+                            : "Switch to Data Binding variable"
+                    }
+                    onClick={() => {
+                        if (isBinding) {
+                            onChange({ type: "static", value: strVal });
+                        } else {
+                            onChange({
+                                type: "binding",
+                                value: strVal || defaultBindingVar,
+                            });
+                        }
+                    }}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-medium transition-colors border shrink-0 ${
+                        isBinding
+                            ? "bg-cyan-950/80 border-cyan-500 text-cyan-300 hover:bg-cyan-900"
+                            : "bg-zinc-800 border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
+                    }`}
+                >
+                    {isBinding ? "Binding" : "Static"}
+                </button>
+            </div>
+        </PropertyRow>
+    );
+};
+
 export const PropertiesTab: FC<PropertiesTabProps> = ({
     onDocumentChange,
 }) => {
@@ -100,7 +196,7 @@ export const PropertiesTab: FC<PropertiesTabProps> = ({
     const { executeNodeMutation } = useDocumentMutation(onDocumentChange);
 
     const [expandedSections, setExpandedSections] = useState<ReadonlySet<string>>(
-        new Set(["text", "colors", "visual", "control", "image", "a11y"])
+        new Set(["text", "colors", "visual", "control", "image", "a11y", "conditional", "generic"])
     );
 
     const selectedNode =
@@ -196,6 +292,53 @@ export const PropertiesTab: FC<PropertiesTabProps> = ({
 
     return (
         <div className="flex flex-col gap-0 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700">
+            {selectedNode.widget_type === "conditional_node" && (
+                <CollapsibleSection
+                    title="Control Flow & Condition"
+                    sectionKey="conditional"
+                    expanded={expandedSections.has("conditional")}
+                    onToggle={toggleSection}
+                >
+                    <PropertyRow label="Condition">
+                        <input
+                            type="text"
+                            value={props.condition ?? ""}
+                            placeholder="e.g. if state.is_logged_in"
+                            onChange={(e) => updateProperty("condition", e.target.value)}
+                            className="flex-1 h-6 px-2 rounded bg-zinc-950 border border-amber-500/60 font-mono text-xs text-amber-200 outline-none focus:border-amber-400"
+                        />
+                    </PropertyRow>
+                </CollapsibleSection>
+            )}
+
+            {selectedNode.widget_type === "generic_widget" && (
+                <CollapsibleSection
+                    title="Custom / Generic Widget"
+                    sectionKey="generic"
+                    expanded={expandedSections.has("generic")}
+                    onToggle={toggleSection}
+                >
+                    <PropertyRow label="Custom Type">
+                        <input
+                            type="text"
+                            value={props.custom_type ?? ""}
+                            placeholder="e.g. MyCustomButton::new"
+                            onChange={(e) => updateProperty("custom_type", e.target.value)}
+                            className="flex-1 h-6 px-2 rounded bg-zinc-950 border border-purple-500/60 font-mono text-xs text-purple-200 outline-none focus:border-purple-400"
+                        />
+                    </PropertyRow>
+                    <PropertyRow label="Raw Args">
+                        <input
+                            type="text"
+                            value={props.raw_args ?? ""}
+                            placeholder="e.g. (state.count, true)"
+                            onChange={(e) => updateProperty("raw_args", e.target.value)}
+                            className="flex-1 h-6 px-2 rounded bg-zinc-950 border border-zinc-700 font-mono text-xs text-zinc-300 outline-none focus:border-blue-500"
+                        />
+                    </PropertyRow>
+                </CollapsibleSection>
+            )}
+
             {hasTextProperties && (
                 <CollapsibleSection
                     title="Text & Typography"
@@ -203,16 +346,26 @@ export const PropertiesTab: FC<PropertiesTabProps> = ({
                     expanded={expandedSections.has("text")}
                     onToggle={toggleSection}
                 >
-                    <PropertyRow label="Text">
-                        <input
-                            type="text"
-                            value={props.text ?? ""}
-                            onChange={(e) =>
-                                updateProperty("text", e.target.value)
-                            }
-                            className="flex-1 h-6 px-2 rounded bg-zinc-950 border border-zinc-700 text-xs text-zinc-200 outline-none focus:border-blue-500/70"
-                        />
-                    </PropertyRow>
+                    <BoundPropertyRow
+                        label="Text"
+                        value={props.text}
+                        defaultBindingVar="self.counter"
+                        onChange={(val) => updateProperty("text", val)}
+                        renderStatic={() => (
+                            <input
+                                type="text"
+                                value={extractPropString(props.text)}
+                                placeholder="Static text..."
+                                onChange={(e) =>
+                                    updateProperty("text", {
+                                        type: "static",
+                                        value: e.target.value,
+                                    })
+                                }
+                                className="w-full h-6 px-2 rounded bg-zinc-950 border border-zinc-700 text-xs text-zinc-200 outline-none focus:border-blue-500/70"
+                            />
+                        )}
+                    />
 
                     <PropertyRow label="i18n Key">
                         <input
@@ -229,75 +382,94 @@ export const PropertiesTab: FC<PropertiesTabProps> = ({
                     </PropertyRow>
 
                     {selectedNode.widget_type === "text_input" && (
-                        <PropertyRow label="Placeholder">
-                            <input
-                                type="text"
-                                value={props.placeholder ?? ""}
-                                onChange={(e) =>
-                                    updateProperty("placeholder", e.target.value)
-                                }
-                                className="flex-1 h-6 px-2 rounded bg-zinc-950 border border-zinc-700 text-xs text-zinc-200 outline-none focus:border-blue-500/70"
-                            />
-                        </PropertyRow>
+                        <BoundPropertyRow
+                            label="Placeholder"
+                            value={props.placeholder}
+                            defaultBindingVar="self.placeholder"
+                            onChange={(val) => updateProperty("placeholder", val)}
+                            renderStatic={() => (
+                                <input
+                                    type="text"
+                                    value={extractPropString(props.placeholder)}
+                                    placeholder="Placeholder text..."
+                                    onChange={(e) =>
+                                        updateProperty("placeholder", {
+                                            type: "static",
+                                            value: e.target.value,
+                                        })
+                                    }
+                                    className="w-full h-6 px-2 rounded bg-zinc-950 border border-zinc-700 text-xs text-zinc-200 outline-none focus:border-blue-500/70"
+                                />
+                            )}
+                        />
                     )}
 
                     <PropertyRow label="Font">
-                        <select
+                        <EnumSelectInput
                             value={props.font_alias ?? ""}
-                            onChange={(e) =>
-                                e.target.value
-                                    ? updateProperty("font_alias", e.target.value)
+                            options={[
+                                { value: "", label: "Default" },
+                                ...fontAliases.map((alias) => ({
+                                    value: alias,
+                                    label: alias,
+                                })),
+                                ...STANDARD_FONT_FAMILIES.map((family) => ({
+                                    value: family,
+                                    label: family,
+                                })),
+                            ]}
+                            onChange={(val) =>
+                                val
+                                    ? updateProperty("font_alias", val)
                                     : removeProperty("font_alias")
                             }
-                            className="flex-1 h-6 px-1.5 rounded bg-zinc-950 border border-zinc-700 text-xs text-zinc-200 outline-none focus:border-blue-500/70"
-                        >
-                            <option value="">Default</option>
-                            {fontAliases.map((alias) => (
-                                <option key={alias} value={alias}>
-                                    {alias}
-                                </option>
-                            ))}
-                            {STANDARD_FONT_FAMILIES.map((family) => (
-                                <option key={family} value={family}>
-                                    {family}
-                                </option>
-                            ))}
-                        </select>
-                    </PropertyRow>
-
-                    <PropertyRow label="Size">
-                        <NumericInput
-                            value={props.font_size ?? 14}
-                            min={1}
-                            max={200}
-                            step={1}
-                            onChange={(v) => updateProperty("font_size", v)}
                         />
                     </PropertyRow>
 
+                    <BoundPropertyRow
+                        label="Size"
+                        value={props.font_size}
+                        defaultBindingVar="self.font_size"
+                        onChange={(val) =>
+                            updateProperty(
+                                "font_size",
+                                isBindingValue(val)
+                                    ? (val as any)
+                                    : Number(extractPropString(val)) || 14
+                            )
+                        }
+                        renderStatic={() => (
+                            <SliderInput
+                                value={typeof props.font_size === "number" ? props.font_size : 14}
+                                min={8}
+                                max={96}
+                                step={1}
+                                unit="px"
+                                onChange={(v) => updateProperty("font_size", v)}
+                            />
+                        )}
+                    />
+
                     <PropertyRow label="Weight">
-                        <select
+                        <EnumSelectInput
                             value={props.font_weight ?? "normal"}
-                            onChange={(e) =>
-                                updateProperty(
-                                    "font_weight",
-                                    e.target.value as FontWeight
-                                )
+                            options={FONT_WEIGHTS.map((w) => ({
+                                value: w,
+                                label: FONT_WEIGHT_LABELS[w],
+                            }))}
+                            onChange={(v) =>
+                                updateProperty("font_weight", v as FontWeight)
                             }
-                            className="flex-1 h-6 px-1.5 rounded bg-zinc-950 border border-zinc-700 text-xs text-zinc-200 outline-none focus:border-blue-500/70"
-                        >
-                            {FONT_WEIGHTS.map((w) => (
-                                <option key={w} value={w}>
-                                    {FONT_WEIGHT_LABELS[w]}
-                                </option>
-                            ))}
-                        </select>
+                        />
                     </PropertyRow>
 
                     <PropertyRow label="Align">
-                        <SegmentedControl
-                            options={TEXT_ALIGNS as unknown as string[]}
+                        <EnumSelectInput
                             value={props.text_align ?? "left"}
+                            options={TEXT_ALIGNS.map((a) => ({
+                                value: a,
+                                label: a.toUpperCase(),
+                            }))}
                             onChange={(v) =>
                                 updateProperty("text_align", v as TextAlign)
                             }
@@ -329,33 +501,72 @@ export const PropertiesTab: FC<PropertiesTabProps> = ({
                 onToggle={toggleSection}
             >
                 {hasTextProperties && (
-                    <PropertyRow label="Text Color">
-                        <MaterialThemeTokenPicker
-                            value={props.text_color}
-                            onChange={(v) => updateProperty("text_color", v)}
-                            onClear={() => removeProperty("text_color")}
-                            theme={document?.theme}
-                        />
-                    </PropertyRow>
+                    <BoundPropertyRow
+                        label="Text Color"
+                        value={props.text_color}
+                        defaultBindingVar="self.text_color"
+                        onChange={(val) =>
+                            updateProperty(
+                                "text_color",
+                                isBindingValue(val)
+                                    ? (val as any)
+                                    : extractPropString(val)
+                            )
+                        }
+                        renderStatic={() => (
+                            <ColorPickerInput
+                                value={extractPropString(props.text_color)}
+                                onChange={(c) => updateProperty("text_color", c)}
+                                onClear={() => removeProperty("text_color")}
+                                placeholder="#ffffff"
+                            />
+                        )}
+                    />
                 )}
 
-                <PropertyRow label="Background">
-                    <MaterialThemeTokenPicker
-                        value={props.background_color}
-                        onChange={(v) => updateProperty("background_color", v)}
-                        onClear={() => removeProperty("background_color")}
-                        theme={document?.theme}
-                    />
-                </PropertyRow>
+                <BoundPropertyRow
+                    label="Background"
+                    value={props.background_color}
+                    defaultBindingVar="self.background_color"
+                    onChange={(val) =>
+                        updateProperty(
+                            "background_color",
+                            isBindingValue(val)
+                                ? (val as any)
+                                : extractPropString(val)
+                        )
+                    }
+                    renderStatic={() => (
+                        <ColorPickerInput
+                            value={extractPropString(props.background_color)}
+                            onChange={(c) => updateProperty("background_color", c)}
+                            onClear={() => removeProperty("background_color")}
+                            placeholder="#18181b"
+                        />
+                    )}
+                />
 
-                <PropertyRow label="Border Color">
-                    <MaterialThemeTokenPicker
-                        value={props.border_color}
-                        onChange={(v) => updateProperty("border_color", v)}
-                        onClear={() => removeProperty("border_color")}
-                        theme={document?.theme}
-                    />
-                </PropertyRow>
+                <BoundPropertyRow
+                    label="Border Color"
+                    value={props.border_color}
+                    defaultBindingVar="self.border_color"
+                    onChange={(val) =>
+                        updateProperty(
+                            "border_color",
+                            isBindingValue(val)
+                                ? (val as any)
+                                : extractPropString(val)
+                        )
+                    }
+                    renderStatic={() => (
+                        <ColorPickerInput
+                            value={extractPropString(props.border_color)}
+                            onChange={(c) => updateProperty("border_color", c)}
+                            onClear={() => removeProperty("border_color")}
+                            placeholder="#3f3f46"
+                        />
+                    )}
+                />
             </CollapsibleSection>
 
             <CollapsibleSection
@@ -364,52 +575,76 @@ export const PropertiesTab: FC<PropertiesTabProps> = ({
                 expanded={expandedSections.has("visual")}
                 onToggle={toggleSection}
             >
-                <PropertyRow label="Opacity">
-                    <div className="flex items-center gap-2 flex-1">
-                        <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            value={props.opacity ?? 1}
-                            onChange={(e) =>
-                                updateProperty(
-                                    "opacity",
-                                    parseFloat(e.target.value)
-                                )
-                            }
-                            className="flex-1 h-1.5 rounded appearance-none bg-zinc-700 cursor-pointer"
-                        />
-                        <NumericInput
-                            value={props.opacity ?? 1}
+                <BoundPropertyRow
+                    label="Opacity"
+                    value={props.opacity}
+                    defaultBindingVar="self.opacity"
+                    onChange={(val) =>
+                        updateProperty(
+                            "opacity",
+                            isBindingValue(val)
+                                ? (val as any)
+                                : Number(extractPropString(val)) || 1
+                        )
+                    }
+                    renderStatic={() => (
+                        <SliderInput
+                            value={typeof props.opacity === "number" ? props.opacity : 1}
                             min={0}
                             max={1}
                             step={0.01}
                             onChange={(v) => updateProperty("opacity", v)}
-                            width={50}
                         />
-                    </div>
-                </PropertyRow>
+                    )}
+                />
 
-                <PropertyRow label="Corner Radius">
-                    <NumericInput
-                        value={props.corner_radius ?? 0}
-                        min={0}
-                        max={999}
-                        step={1}
-                        onChange={(v) => updateProperty("corner_radius", v)}
-                    />
-                </PropertyRow>
+                <BoundPropertyRow
+                    label="Radius"
+                    value={props.corner_radius}
+                    defaultBindingVar="self.corner_radius"
+                    onChange={(val) =>
+                        updateProperty(
+                            "corner_radius",
+                            isBindingValue(val)
+                                ? (val as any)
+                                : Number(extractPropString(val)) || 0
+                        )
+                    }
+                    renderStatic={() => (
+                        <SliderInput
+                            value={typeof props.corner_radius === "number" ? props.corner_radius : 0}
+                            min={0}
+                            max={100}
+                            step={1}
+                            unit="px"
+                            onChange={(v) => updateProperty("corner_radius", v)}
+                        />
+                    )}
+                />
 
-                <PropertyRow label="Border Width">
-                    <NumericInput
-                        value={props.border_width ?? 0}
-                        min={0}
-                        max={50}
-                        step={1}
-                        onChange={(v) => updateProperty("border_width", v)}
-                    />
-                </PropertyRow>
+                <BoundPropertyRow
+                    label="Border W"
+                    value={props.border_width}
+                    defaultBindingVar="self.border_width"
+                    onChange={(val) =>
+                        updateProperty(
+                            "border_width",
+                            isBindingValue(val)
+                                ? (val as any)
+                                : Number(extractPropString(val)) || 0
+                        )
+                    }
+                    renderStatic={() => (
+                        <SliderInput
+                            value={typeof props.border_width === "number" ? props.border_width : 0}
+                            min={0}
+                            max={20}
+                            step={1}
+                            unit="px"
+                            onChange={(v) => updateProperty("border_width", v)}
+                        />
+                    )}
+                />
 
                 <PropertyRow label="Shadow">
                     <select
@@ -515,6 +750,36 @@ export const PropertiesTab: FC<PropertiesTabProps> = ({
                                     />
                                 </label>
                             </PropertyRow>
+                            <PropertyRow label="Theme Style">
+                                <EnumSelectInput
+                                    value={props.style ?? ""}
+                                    options={[
+                                        { value: "", label: "Default" },
+                                        { value: "primary", label: "Primary" },
+                                        { value: "secondary", label: "Secondary" },
+                                        { value: "success", label: "Success" },
+                                        { value: "danger", label: "Danger / Destructive" },
+                                        { value: "text", label: "Text / Flat" },
+                                    ]}
+                                    onChange={(v) =>
+                                        v ? updateProperty("style", v) : removeProperty("style")
+                                    }
+                                />
+                            </PropertyRow>
+                            <PropertyRow label="Theme">
+                                <EnumSelectInput
+                                    value={props.theme ?? ""}
+                                    options={[
+                                        { value: "", label: "Inherit" },
+                                        { value: "light", label: "Light" },
+                                        { value: "dark", label: "Dark" },
+                                        { value: "custom", label: "Custom" },
+                                    ]}
+                                    onChange={(v) =>
+                                        v ? updateProperty("theme", v) : removeProperty("theme")
+                                    }
+                                />
+                            </PropertyRow>
                         </>
                     )}
 
@@ -522,10 +787,10 @@ export const PropertiesTab: FC<PropertiesTabProps> = ({
                         selectedNode.widget_type === "progress_bar") && (
                         <>
                             <PropertyRow label="Min">
-                                <NumericInput
+                                <SliderInput
                                     value={props.min_value ?? 0}
-                                    min={-99999}
-                                    max={99999}
+                                    min={-1000}
+                                    max={1000}
                                     step={1}
                                     onChange={(v) =>
                                         updateProperty("min_value", v)
@@ -533,10 +798,10 @@ export const PropertiesTab: FC<PropertiesTabProps> = ({
                                 />
                             </PropertyRow>
                             <PropertyRow label="Max">
-                                <NumericInput
+                                <SliderInput
                                     value={props.max_value ?? 100}
-                                    min={-99999}
-                                    max={99999}
+                                    min={-1000}
+                                    max={1000}
                                     step={1}
                                     onChange={(v) =>
                                         updateProperty("max_value", v)
@@ -545,28 +810,45 @@ export const PropertiesTab: FC<PropertiesTabProps> = ({
                             </PropertyRow>
                             {selectedNode.widget_type === "slider" && (
                                 <PropertyRow label="Step">
-                                    <NumericInput
+                                    <SliderInput
                                         value={props.step_value ?? 1}
                                         min={0.01}
-                                        max={99999}
-                                        step={0.01}
+                                        max={50}
+                                        step={0.1}
                                         onChange={(v) =>
                                             updateProperty("step_value", v)
                                         }
                                     />
                                 </PropertyRow>
                             )}
-                            <PropertyRow label="Current">
-                                <NumericInput
-                                    value={props.current_value ?? 0}
-                                    min={props.min_value ?? 0}
-                                    max={props.max_value ?? 100}
-                                    step={props.step_value ?? 1}
-                                    onChange={(v) =>
-                                        updateProperty("current_value", v)
-                                    }
-                                />
-                            </PropertyRow>
+                            <BoundPropertyRow
+                                label="Current"
+                                value={props.current_value}
+                                defaultBindingVar="self.slider_val"
+                                onChange={(val) =>
+                                    updateProperty(
+                                        "current_value",
+                                        isBindingValue(val)
+                                            ? (val as any)
+                                            : Number(extractPropString(val)) || 0
+                                    )
+                                }
+                                renderStatic={() => (
+                                    <SliderInput
+                                        value={
+                                            typeof props.current_value === "number"
+                                                ? props.current_value
+                                                : props.min_value ?? 0
+                                        }
+                                        min={props.min_value ?? 0}
+                                        max={props.max_value ?? 100}
+                                        step={props.step_value ?? 1}
+                                        onChange={(v) =>
+                                            updateProperty("current_value", v)
+                                        }
+                                    />
+                                )}
+                            />
                         </>
                     )}
 

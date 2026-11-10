@@ -1,0 +1,172 @@
+{
+  "$schema": "https://ruxel.dev/schemas/rux-document.schema.json",
+  "metadata": {
+    "schema_version": "1.0.0",
+    "app_name": "IcedTodoApp",
+    "app_version": "0.1.0",
+    "target_frameworks": ["iced"],
+    "description": "Functional To-Do application built with Iced and Ruxel Studio",
+    "authors": ["Ruxel Studio Team"],
+    "license": "MIT OR Apache-2.0",
+    "created_at": "2026-11-10T00:00:00Z",
+    "updated_at": "2026-11-10T00:00:00Z"
+  },
+  "window": {
+    "title": "Ruxel Studio — Iced To-Do List",
+    "initial_width": 720.0,
+    "initial_height": 600.0,
+    "min_width": 480.0,
+    "min_height": 400.0,
+    "resizable": true,
+    "scale_mode": "logical",
+    "transparent": false,
+    "decorations": true,
+    "always_on_top": false,
+    "fullscreen": false
+  },
+  "assets": {
+    "fonts": [],
+    "icons": [],
+    "images": []
+  },
+  "themes": {
+    "default_mode": "dark",
+    "color_tokens": {
+      "light": {},
+      "dark": {}
+    },
+    "typography": {}
+  },
+  "root": {
+    "id": "root_container",
+    "widget_type": "v_box",
+    "properties": {
+      "spacing": 16.0
+    },
+    "children": [
+      {
+        "id": "header_title",
+        "widget_type": "label",
+        "properties": {
+          "text": "Ruxel Tasks",
+          "font_size": 28.0
+        }
+      },
+      {
+        "id": "input_row",
+        "widget_type": "h_box",
+        "properties": {
+          "spacing": 12.0
+        },
+        "children": [
+          {
+            "id": "new_task_input",
+            "widget_type": "text_input",
+            "properties": {
+              "placeholder": "What needs to be accomplished?"
+            },
+            "events": {
+              "on_change": {
+                "handler_name": "on_task_input_change",
+                "message": "TaskInputChanged"
+              }
+            }
+          },
+          {
+            "id": "add_task_btn",
+            "widget_type": "button",
+            "properties": {
+              "text": "Add Task"
+            },
+            "events": {
+              "on_click": {
+                "handler_name": "on_add_task_click",
+                "message": "AddTask"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "tasks_list",
+        "widget_type": "v_box",
+        "properties": {
+          "spacing": 8.0
+        },
+        "children": [
+          {
+            "id": "task_item_1",
+            "widget_type": "checkbox",
+            "properties": {
+              "text": "Implement lossless AST patching",
+              "checked": true
+            },
+            "events": {
+              "on_toggle": {
+                "handler_name": "on_toggle_task_1",
+                "message": "ToggleTask1"
+              }
+            }
+          },
+          {
+            "id": "task_item_2",
+            "widget_type": "checkbox",
+            "properties": {
+              "text": "Build multi-framework visual editor",
+              "checked": true
+            },
+            "events": {
+              "on_toggle": {
+                "handler_name": "on_toggle_task_2",
+                "message": "ToggleTask2"
+              }
+            }
+          },
+          {
+            "id": "task_item_3",
+            "widget_type": "checkbox",
+            "properties": {
+              "text": "Deploy Phase 6 CI/CD and Telemetry",
+              "checked": false
+            },
+            "events": {
+              "on_toggle": {
+                "handler_name": "on_toggle_task_3",
+                "message": "ToggleTask3"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "footer_row",
+        "widget_type": "h_box",
+        "properties": {
+          "spacing": 16.0
+        },
+        "children": [
+          {
+            "id": "status_label",
+            "widget_type": "label",
+            "properties": {
+              "text": "1 task remaining"
+            }
+          },
+          {
+            "id": "clear_completed_btn",
+            "widget_type": "button",
+            "properties": {
+              "text": "Clear Completed"
+            },
+            "events": {
+              "on_click": {
+                "handler_name": "on_clear_completed_click",
+                "message": "ClearCompleted"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

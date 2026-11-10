@@ -68,8 +68,16 @@ fn generate_node_view_expr(node: &WidgetNode) -> TokenStream {
         let field_name = to_snake_case(binding);
         let field_ident = make_ident(&field_name);
         quote!(Some(format!("{}", state.#field_ident)))
-    } else if let Some(txt) = &node.properties.text {
-        quote!(Some(#txt.to_string()))
+    } else if let Some(pv) = &node.properties.text {
+        match pv {
+            rux_ast::widget::PropertyValue::Binding(b) => {
+                let b_tokens: TokenStream = syn::parse_str(b).unwrap_or_else(|_| quote!(#b));
+                quote!(Some(format!("{}", #b_tokens)))
+            }
+            rux_ast::widget::PropertyValue::Static(txt) => {
+                quote!(Some(#txt.to_string()))
+            }
+        }
     } else {
         quote!(None)
     };

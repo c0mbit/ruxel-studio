@@ -52,6 +52,10 @@ rux_autopatch_test_*
 **/*.temp
 **
 !dist/**
+dist/*.map
+dist/**/*.map
+dist/*.d.ts
+dist/**/*.d.ts
 !webview-dist/**
 !bin/**
 !package.json

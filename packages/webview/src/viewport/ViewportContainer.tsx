@@ -1,4 +1,4 @@
-import { FC, useEffect, useRef, useState } from "react";
+import { FC, useEffect, useRef, useState, useCallback } from "react";
 import {
     type RuxDocument,
     type WidgetNode,
@@ -9,7 +9,11 @@ import { DocumentMutationCommand } from "../history/types";
 import { useCrdtStore } from "../state/crdtStore";
 import { useEditorStore } from "../state/editorStore";
 import { useHistoryStore } from "../state/historyStore";
-import { useViewportStore } from "../state/viewportStore";
+import {
+    useViewportStore,
+    calculateProportionalScale,
+    type DevicePreset,
+} from "../state/viewportStore";
 import { findNodeById, insertChild, normalizeWidgetNode } from "../utils/treeTraversal";
 import {
     collectAllIds,
@@ -19,6 +23,7 @@ import {
 } from "../utils/widgetFactory";
 import { CanvasOverlay } from "./CanvasOverlay";
 import { DomWidgetRenderer } from "./DomWidgetRenderer";
+import { ViewportControlsToolbar } from "./ViewportControlsToolbar";
 import {
     applyResizeDelta,
     findHandleAtScreenPoint,
@@ -45,6 +50,7 @@ export const ViewportContainer: FC<ViewportContainerProps> = ({
     const [cursorCoords, setCursorCoords] = useState<Point>({ x: 0, y: 0 });
 
     const camera = useViewportStore((state) => state.camera);
+    const setCamera = useViewportStore((state) => state.setCamera);
     const zoomAt = useViewportStore((state) => state.zoomAt);
     const panBy = useViewportStore((state) => state.panBy);
     const fitToScreen = useViewportStore((state) => state.fitToScreen);
@@ -70,6 +76,12 @@ export const ViewportContainer: FC<ViewportContainerProps> = ({
     const endDrag = useViewportStore((state) => state.endDrag);
     const nodeBounds = useViewportStore((state) => state.nodeBounds);
 
+    const setPreviewScale = useViewportStore((state) => state.setPreviewScale);
+    const getEffectiveDimensions = useViewportStore(
+        (state) => state.getEffectiveDimensions
+    );
+    const effectiveDimensions = getEffectiveDimensions();
+
     const selectedNodeId = useEditorStore((state) => state.selectedNodeId);
     const setSelectedNodeId = useEditorStore((state) => state.setSelectedNodeId);
     const setRawText = useEditorStore((state) => state.setRawText);
@@ -91,6 +103,43 @@ export const ViewportContainer: FC<ViewportContainerProps> = ({
     const panStartRef = useRef<Point | null>(null);
     const dragStartDocRef = useRef<RuxDocument | null>(null);
     const dragStartRectRef = useRef<Rect | null>(null);
+
+    const fitAndCenterPreset = useCallback(
+        (width: number, height: number, force = false) => {
+            if (!force && !useViewportStore.getState().autoFitScale) {
+                return;
+            }
+            const containerW = containerSize.width;
+            const containerH = containerSize.height;
+            if (containerW <= 0 || containerH <= 0) return;
+
+            const scale = calculateProportionalScale(
+                containerW,
+                containerH,
+                width,
+                height,
+                48
+            );
+            const panX = Math.round((containerW - width * scale) / 2);
+            const panY = Math.max(24, Math.round((containerH - height * scale) / 2));
+
+            setCamera(panX, panY, scale);
+            setPreviewScale(scale);
+        },
+        [containerSize, setCamera, setPreviewScale]
+    );
+
+    const handlePresetSelected = useCallback(
+        (_preset: DevicePreset) => {
+            const nextEffective = useViewportStore.getState().getEffectiveDimensions();
+            fitAndCenterPreset(nextEffective.width, nextEffective.height, true);
+        },
+        [fitAndCenterPreset]
+    );
+
+    useEffect(() => {
+        setPreviewScale(camera.zoom);
+    }, [camera.zoom, setPreviewScale]);
 
     useEffect(() => {
         const container = containerRef.current;
@@ -598,8 +647,8 @@ export const ViewportContainer: FC<ViewportContainerProps> = ({
     const targetWindowRect: Rect = {
         x: 0,
         y: 0,
-        width: document.window.initial_width,
-        height: document.window.initial_height,
+        width: effectiveDimensions.width,
+        height: effectiveDimensions.height,
     };
 
     const getCursorStyle = (): string => {
@@ -617,11 +666,20 @@ export const ViewportContainer: FC<ViewportContainerProps> = ({
 
     return (
         <div className="flex-1 flex flex-col h-full bg-zinc-950 overflow-hidden relative select-none">
+            {/* Directive 1: Responsive Design Viewport Controls Toolbar */}
+            <ViewportControlsToolbar onPresetSelected={handlePresetSelected} />
+
             <header className="h-9 bg-zinc-900/90 border-b border-zinc-800 flex items-center justify-between px-3 shrink-0 text-xs z-20">
                 <div className="flex items-center gap-1.5">
                     <button
                         type="button"
-                        onClick={() => undo()}
+                        onClick={() => {
+                            undo();
+                            if (onDocumentChange) {
+                                const currentText = useEditorStore.getState().rawText;
+                                onDocumentChange(currentText, "Undo");
+                            }
+                        }}
                         disabled={!canUndo}
                         className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs border border-zinc-700/60 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                         title="Undo (Ctrl+Z)"
@@ -645,7 +703,13 @@ export const ViewportContainer: FC<ViewportContainerProps> = ({
 
                     <button
                         type="button"
-                        onClick={() => redo()}
+                        onClick={() => {
+                            redo();
+                            if (onDocumentChange) {
+                                const currentText = useEditorStore.getState().rawText;
+                                onDocumentChange(currentText, "Redo");
+                            }
+                        }}
                         disabled={!canRedo}
                         className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs border border-zinc-700/60 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                         title="Redo (Ctrl+Y)"
@@ -872,7 +936,10 @@ export const ViewportContainer: FC<ViewportContainerProps> = ({
                     </div>
                 ) : (
                     <>
-                        <DomWidgetRenderer document={document} />
+                        <DomWidgetRenderer
+                            document={document}
+                            onDocumentChange={onDocumentChange}
+                        />
 
                         <CanvasOverlay
                             width={containerSize.width}

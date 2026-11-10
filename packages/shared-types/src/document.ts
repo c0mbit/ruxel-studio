@@ -9,6 +9,12 @@ export interface I18nConfig {
     readonly locales: Record<string, Record<string, string>>;
 }
 
+export interface ComponentDefinition {
+    readonly name: string;
+    readonly root: WidgetNode;
+    readonly file_path?: string;
+}
+
 export interface RuxDocument {
     readonly $schema?: string;
     readonly schema_version?: string;
@@ -19,6 +25,7 @@ export interface RuxDocument {
     readonly i18n?: I18nConfig;
     readonly theme: ThemeConfig;
     readonly root: WidgetNode;
+    readonly components?: Readonly<Record<string, ComponentDefinition>>;
     readonly type?: WidgetType;
     readonly props?: WidgetProperties;
     readonly children?: readonly WidgetNode[];
@@ -642,6 +649,22 @@ export function cleanDocumentForSerialization(
             ? raw.theme
             : {}) as ThemeConfig,
         root: cleanWidgetNodeForSerialization(rootNode),
+        ...(raw.components && typeof raw.components === "object"
+            ? {
+                  components: Object.fromEntries(
+                      Object.entries(
+                          raw.components as Record<string, ComponentDefinition>
+                      ).map(([k, comp]) => [
+                          k,
+                          {
+                              name: comp.name || k,
+                              root: cleanWidgetNodeForSerialization(comp.root),
+                              ...(comp.file_path ? { file_path: comp.file_path } : {}),
+                          },
+                      ])
+                  ),
+              }
+            : {}),
     };
 
     return cleaned;

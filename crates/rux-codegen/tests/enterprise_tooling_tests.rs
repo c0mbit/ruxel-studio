@@ -116,7 +116,7 @@ fn test_localization_ftl_and_json_file_generation() {
 fn test_localization_macro_injection_in_views() {
     let mut root = create_test_node("root", WidgetType::VBox);
     let mut btn = create_test_node("submit_btn", WidgetType::Button);
-    btn.properties.text = Some("Submit".to_string());
+    btn.properties.text = Some("Submit".into());
     btn.properties.text_key = Some("action_submit".to_string());
     root.children.push(btn);
 
@@ -144,7 +144,7 @@ fn test_localization_macro_injection_in_views() {
 fn test_accessibility_attribute_bindings() {
     let mut root = create_test_node("root", WidgetType::VBox);
     let mut btn = create_test_node("pay_btn", WidgetType::Button);
-    btn.properties.text = Some("Checkout".to_string());
+    btn.properties.text = Some("Checkout".into());
     btn.properties.aria_label = Some("Complete your purchase".to_string());
     root.children.push(btn);
 

@@ -39,7 +39,9 @@ export type WidgetType =
     | "viewport3_d"
     | "canvas3_d"
     | "image"
-    | "custom_component";
+    | "custom_component"
+    | "conditional_node"
+    | "generic_widget";
 
 export type TextAlign = "left" | "center" | "right" | "justify";
 
@@ -87,6 +89,13 @@ export interface AnimationDefinition {
     readonly auto_reverse?: boolean;
 }
 
+export type PropertyValue =
+    | { type: "static"; value: string }
+    | { type: "binding"; value: string }
+    | { static: string }
+    | { binding: string }
+    | string;
+
 export interface WidgetProperties {
     readonly opacity?: number;
     readonly background_color?: string;
@@ -94,8 +103,8 @@ export interface WidgetProperties {
     readonly border_width?: number;
     readonly corner_radius?: number;
     readonly shadow_ref?: string;
-    readonly text?: string;
-    readonly placeholder?: string;
+    readonly text?: PropertyValue;
+    readonly placeholder?: PropertyValue;
     readonly font_alias?: string;
     readonly font_size?: number;
     readonly font_weight?: FontWeight;
@@ -130,9 +139,18 @@ export interface WidgetProperties {
     readonly image_path?: string;
     readonly image_alias?: string;
     readonly text_key?: string;
+    readonly condition?: string;
+    readonly custom_type?: string;
+    readonly raw_args?: string;
     readonly aria_label?: string;
     readonly aria_role?: string;
     readonly aria_description?: string;
+    readonly theme?: string;
+    readonly style?: string;
+    readonly spacing?: number;
+    readonly padding?: number;
+    readonly fill_width?: boolean;
+    readonly fill_height?: boolean;
     readonly custom_properties?: Readonly<Record<string, unknown>>;
 }
 

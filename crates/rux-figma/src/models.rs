@@ -98,7 +98,7 @@ pub struct FigmaEffect {
     pub spread: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FigmaNode {
     pub id: String,
@@ -135,6 +135,22 @@ pub struct FigmaNode {
     pub layout_grow: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layout_align: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layout_wrap: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layout_sizing_horizontal: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layout_sizing_vertical: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counter_axis_spacing: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_width: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_height: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spacing: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub padding: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fills: Vec<FigmaPaint>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

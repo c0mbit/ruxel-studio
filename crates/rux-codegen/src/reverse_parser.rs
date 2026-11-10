@@ -1,5 +1,5 @@
 use rux_ast::document::RuxDocument;
-use rux_ast::widget::{WidgetNode, WidgetType};
+use rux_ast::widget::{PropertyValue, WidgetNode, WidgetType};
 use serde::{Deserialize, Serialize};
 use syn::parse::Parser;
 use syn::punctuated::Punctuated;
@@ -34,6 +34,57 @@ impl ReverseParser {
         code: &str,
         framework: Option<TargetFramework>,
     ) -> Result<ReverseParserReport, CodegenError> {
+        Self::patch_document_internal(doc, code, framework, None)
+    }
+
+    pub fn patch_document_with_cache(
+        doc: &mut RuxDocument,
+        code: &str,
+        framework: Option<TargetFramework>,
+        cache: &mut crate::ast_cache::AstCache,
+    ) -> Result<ReverseParserReport, CodegenError> {
+        Self::patch_document_internal(doc, code, framework, Some(cache))
+    }
+
+    fn patch_document_internal(
+        doc: &mut RuxDocument,
+        code: &str,
+        framework: Option<TargetFramework>,
+        mut cache: Option<&mut crate::ast_cache::AstCache>,
+    ) -> Result<ReverseParserReport, CodegenError> {
+        let is_slint = matches!(framework, Some(TargetFramework::Slint))
+            || code.contains("inherits Window")
+            || code.contains("component ");
+
+        if is_slint {
+            let mut patches = Vec::new();
+            crate::plugins::slint::SlintPlugin::patch_slint_document(doc, code, &mut patches)?;
+            let mut unique_node_ids = std::collections::HashSet::new();
+            for p in &patches {
+                unique_node_ids.insert(p.widget_id.clone());
+            }
+            return Ok(ReverseParserReport {
+                patched_nodes_count: unique_node_ids.len(),
+                patches,
+            });
+        }
+
+        let is_dioxus = matches!(framework, Some(TargetFramework::Dioxus))
+            || code.contains("rsx!");
+
+        if is_dioxus {
+            let mut patches = Vec::new();
+            crate::plugins::dioxus::DioxusPlugin::patch_dioxus_document(doc, code, &mut patches)?;
+            let mut unique_node_ids = std::collections::HashSet::new();
+            for p in &patches {
+                unique_node_ids.insert(p.widget_id.clone());
+            }
+            return Ok(ReverseParserReport {
+                patched_nodes_count: unique_node_ids.len(),
+                patches,
+            });
+        }
+
         let syntax_file: File =
             syn::parse_str(code).map_err(|e| CodegenError::SynParseError(format!("{}", e)))?;
 
@@ -41,10 +92,10 @@ impl ReverseParser {
 
         match framework {
             Some(TargetFramework::Iced) => {
-                Self::patch_iced(doc, &syntax_file, &mut patches)?;
+                Self::patch_iced(doc, &syntax_file, &mut patches, cache.as_deref_mut())?;
             }
             Some(TargetFramework::Egui) => {
-                Self::patch_egui(doc, &syntax_file, &mut patches)?;
+                Self::patch_egui(doc, &syntax_file, &mut patches, cache.as_deref_mut())?;
             }
             _ => {
                 let has_view_fn = syntax_file.items.iter().any(|item| {
@@ -74,11 +125,11 @@ impl ReverseParser {
                 if has_build_view_fn {
                     Self::patch_build_view(doc, &syntax_file, &mut patches)?;
                 } else if has_render_ui_fn {
-                    Self::patch_egui(doc, &syntax_file, &mut patches)?;
+                    Self::patch_egui(doc, &syntax_file, &mut patches, cache.as_deref_mut())?;
                 } else if has_view_fn {
-                    Self::patch_iced(doc, &syntax_file, &mut patches)?;
+                    Self::patch_iced(doc, &syntax_file, &mut patches, cache.as_deref_mut())?;
                 } else {
-                    Self::patch_any(doc, &syntax_file, &mut patches)?;
+                    Self::patch_any(doc, &syntax_file, &mut patches, cache)?;
                 }
             }
         }
@@ -205,6 +256,7 @@ impl ReverseParser {
         doc: &mut RuxDocument,
         syntax_file: &File,
         patches: &mut Vec<PropertyPatch>,
+        mut cache: Option<&mut crate::ast_cache::AstCache>,
     ) -> Result<(), CodegenError> {
         let events = EventCollector::collect_document(doc);
 
@@ -214,11 +266,13 @@ impl ReverseParser {
                     for stmt in &block.stmts {
                         if let Stmt::Expr(expr, _) = stmt {
                             let unwrapped = unwrap_method_calls(expr);
+                            let sub_cache = cache.as_deref_mut();
                             Self::reconcile_iced_container(
                                 &mut doc.root,
                                 unwrapped.base_expr,
                                 &events,
                                 patches,
+                                sub_cache,
                             );
                         }
                     }
@@ -234,6 +288,7 @@ impl ReverseParser {
         expr: &Expr,
         events: &[crate::events::BoundEvent],
         patches: &mut Vec<PropertyPatch>,
+        mut cache: Option<&mut crate::ast_cache::AstCache>,
     ) {
         match expr {
             Expr::Macro(ExprMacro { mac, .. }) => {
@@ -248,7 +303,8 @@ impl ReverseParser {
                     let parser = Punctuated::<Expr, Token![,]>::parse_terminated;
                     if let Ok(punctuated) = parser.parse2(mac.tokens.clone()) {
                         let elements: Vec<Expr> = punctuated.into_iter().collect();
-                        Self::reconcile_iced_children(node, &elements, events, patches);
+                        let sub_cache = cache.as_deref_mut();
+                        Self::reconcile_iced_children(node, &elements, events, patches, sub_cache);
                     }
                 }
             }
@@ -256,7 +312,8 @@ impl ReverseParser {
                 let func_name = extract_path_ident(func).unwrap_or_default();
                 if (func_name == "container" || func_name == "scrollable") && !args.is_empty() {
                     let inner = unwrap_method_calls(&args[0]);
-                    Self::reconcile_iced_container(node, inner.base_expr, events, patches);
+                    let sub_cache = cache;
+                    Self::reconcile_iced_container(node, inner.base_expr, events, patches, sub_cache);
                 }
             }
             _ => {}
@@ -268,7 +325,23 @@ impl ReverseParser {
         elements: &[Expr],
         events: &[crate::events::BoundEvent],
         patches: &mut Vec<PropertyPatch>,
+        mut cache: Option<&mut crate::ast_cache::AstCache>,
     ) {
+        let block_hash = crate::ast_cache::AstCache::compute_exprs_hash(elements);
+        let has_children = !parent.children.is_empty();
+        let bypass = if let Some(ref mut c) = cache {
+            c.should_bypass(&parent.id, block_hash, has_children)
+        } else {
+            crate::ast_cache::AstCache::global()
+                .lock()
+                .unwrap()
+                .should_bypass(&parent.id, block_hash, has_children)
+        };
+
+        if bypass {
+            return;
+        }
+
         let old_children = std::mem::take(&mut parent.children);
         let mut assigned_old: Vec<bool> = vec![false; old_children.len()];
         let mut element_matches: Vec<Option<usize>> = vec![None; elements.len()];
@@ -295,7 +368,8 @@ impl ReverseParser {
             }
             let call_info = unwrap_call_chain(elem_expr);
             let inferred_type = infer_iced_widget_type(&call_info);
-            let elem_text = extract_string_from_call_args(&call_info.base_args);
+            let elem_text = extract_string_from_call_args(&call_info.base_args)
+                .or_else(|| extract_image_path_from_expr(elem_expr));
 
             if let (Some(wtype), Some(ref text)) = (inferred_type, &elem_text) {
                 if let Some(old_idx) = old_children.iter().enumerate().position(|(i, c)| {
@@ -304,6 +378,7 @@ impl ReverseParser {
                     }
                     c.properties.text.as_deref() == Some(text.as_str())
                         || c.properties.placeholder.as_deref() == Some(text.as_str())
+                        || c.properties.image_path.as_deref() == Some(text.as_str())
                 }) {
                     element_matches[elem_idx] = Some(old_idx);
                     assigned_old[old_idx] = true;
@@ -359,7 +434,8 @@ impl ReverseParser {
         for (elem_idx, elem_expr) in elements.iter().enumerate() {
             if let Some(old_idx) = element_matches[elem_idx] {
                 let mut child = old_children[old_idx].clone();
-                Self::reconcile_iced_widget(&mut child, elem_expr, events, patches);
+                let sub_cache = cache.as_deref_mut();
+                Self::reconcile_iced_widget(&mut child, elem_expr, events, patches, sub_cache);
                 new_children.push(child);
             } else {
                 // New element added in code (e.g. prepended or appended)
@@ -373,6 +449,9 @@ impl ReverseParser {
                     WidgetType::RadioButton => "rad",
                     WidgetType::VBox => "vbox",
                     WidgetType::HBox => "hbox",
+                    WidgetType::ConditionalNode => "cond",
+                    WidgetType::GenericWidget => "generic",
+                    WidgetType::Image => "img",
                     _ => "node",
                 };
 
@@ -396,7 +475,8 @@ impl ReverseParser {
                     children: Vec::new(),
                 };
 
-                Self::reconcile_iced_widget(&mut new_child, elem_expr, events, patches);
+                let sub_cache = cache.as_deref_mut();
+                Self::reconcile_iced_widget(&mut new_child, elem_expr, events, patches, sub_cache);
                 patches.push(PropertyPatch {
                     widget_id: new_id,
                     property_name: "created".to_string(),
@@ -407,6 +487,15 @@ impl ReverseParser {
             }
         }
 
+        if let Some(ref mut c) = cache {
+            c.update(parent.id.clone(), block_hash);
+        } else {
+            crate::ast_cache::AstCache::global()
+                .lock()
+                .unwrap()
+                .update(parent.id.clone(), block_hash);
+        }
+
         parent.children = new_children;
     }
 
@@ -415,6 +504,7 @@ impl ReverseParser {
         expr: &Expr,
         events: &[crate::events::BoundEvent],
         patches: &mut Vec<PropertyPatch>,
+        mut cache: Option<&mut crate::ast_cache::AstCache>,
     ) {
         let call_info = unwrap_call_chain(expr);
 
@@ -425,29 +515,107 @@ impl ReverseParser {
         }
 
         match node.widget_type {
-            WidgetType::Button => {
-                if let Some(txt) = extract_string_from_call_args(&call_info.base_args) {
-                    patch_text(node, &txt, patches);
-                }
-            }
-            WidgetType::Label => {
-                if let Some(txt) = extract_string_from_call_args(&call_info.base_args) {
-                    patch_text(node, &txt, patches);
+            WidgetType::Button | WidgetType::Label | WidgetType::Checkbox | WidgetType::RadioButton => {
+                if let Some(pv) = extract_property_value_from_call_args(&call_info.base_args) {
+                    patch_text_value(node, pv, patches);
                 }
             }
             WidgetType::TextInput => {
-                if let Some(placeholder) = extract_string_from_call_args(&call_info.base_args) {
-                    patch_placeholder(node, &placeholder, patches);
+                if let Some(pv) = extract_property_value_from_call_args(&call_info.base_args) {
+                    patch_placeholder_value(node, pv, patches);
                 }
             }
-            WidgetType::Checkbox => {
-                if let Some(txt) = extract_string_from_call_args(&call_info.base_args) {
-                    patch_text(node, &txt, patches);
+            WidgetType::Image => {
+                let extracted = call_info
+                    .base_args
+                    .first()
+                    .and_then(|arg| extract_image_path_from_expr(arg))
+                    .or_else(|| extract_image_path_from_expr(expr));
+                if let Some(path) = extracted {
+                    patch_image_path(node, &path, patches);
                 }
             }
-            WidgetType::RadioButton => {
-                if let Some(txt) = extract_string_from_call_args(&call_info.base_args) {
-                    patch_text(node, &txt, patches);
+            WidgetType::ConditionalNode => {
+                match call_info.base_expr {
+                    Expr::If(expr_if) => {
+                        let cond_str = quote::quote!(#expr_if.cond).to_string();
+                        node.properties.condition = Some(cond_str);
+                        let mut inner_exprs = Vec::new();
+                        for stmt in &expr_if.then_branch.stmts {
+                            if let Stmt::Expr(e, _) = stmt {
+                                inner_exprs.push(e.clone());
+                            }
+                        }
+                        if let Some((_, else_branch)) = &expr_if.else_branch {
+                            match &**else_branch {
+                                Expr::Block(b) => {
+                                    for stmt in &b.block.stmts {
+                                        if let Stmt::Expr(e, _) = stmt {
+                                            inner_exprs.push(e.clone());
+                                        }
+                                    }
+                                }
+                                Expr::If(nested_if) => {
+                                    inner_exprs.push(Expr::If(nested_if.clone()));
+                                }
+                                other => {
+                                    inner_exprs.push(other.clone());
+                                }
+                            }
+                        }
+                        if !inner_exprs.is_empty() {
+                            let sub_cache = cache.as_deref_mut();
+                            Self::reconcile_iced_children(node, &inner_exprs, events, patches, sub_cache);
+                        }
+                    }
+                    Expr::Match(expr_match) => {
+                        let cond_str = format!("match {}", quote::quote!(#expr_match.expr));
+                        node.properties.condition = Some(cond_str);
+                        let mut inner_exprs = Vec::new();
+                        for arm in &expr_match.arms {
+                            inner_exprs.push((*arm.body).clone());
+                        }
+                        if !inner_exprs.is_empty() {
+                            let sub_cache = cache.as_deref_mut();
+                            Self::reconcile_iced_children(node, &inner_exprs, events, patches, sub_cache);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            WidgetType::GenericWidget => {
+                match call_info.base_expr {
+                    Expr::Call(ExprCall { func, args, .. }) => {
+                        let func_str = quote::quote!(#func).to_string().replace(" ", "");
+                        let args_str = if args.is_empty() {
+                            String::new()
+                        } else {
+                            quote::quote!(#args).to_string()
+                        };
+                        node.properties.custom_type = Some(func_str);
+                        node.properties.raw_args = Some(args_str);
+                    }
+                    Expr::MethodCall(m) => {
+                        let receiver_str = quote::quote!(#m.receiver).to_string();
+                        let method_str = m.method.to_string();
+                        let full_ident = format!("{}.{}", receiver_str, method_str);
+                        let args_str = if m.args.is_empty() {
+                            String::new()
+                        } else {
+                            let mut s = String::new();
+                            for (i, arg) in m.args.iter().enumerate() {
+                                if i > 0 { s.push_str(", "); }
+                                s.push_str(&quote::quote!(#arg).to_string());
+                            }
+                            s
+                        };
+                        node.properties.custom_type = Some(full_ident);
+                        node.properties.raw_args = Some(args_str);
+                    }
+                    _ => {
+                        let full_expr = quote::quote!(#expr).to_string();
+                        node.properties.custom_type = Some(full_expr);
+                    }
                 }
             }
             WidgetType::VBox
@@ -459,7 +627,8 @@ impl ReverseParser {
             | WidgetType::TabPane
             | WidgetType::SplitPane
             | WidgetType::Accordion => {
-                Self::reconcile_iced_container(node, call_info.base_expr, events, patches);
+                let sub_cache = cache;
+                Self::reconcile_iced_container(node, call_info.base_expr, events, patches, sub_cache);
             }
             _ => {}
         }
@@ -475,6 +644,32 @@ impl ReverseParser {
                             patches,
                         );
                     }
+                    let arg_str = quote::quote!(#arg).to_string().replace(" ", "");
+                    let parsed_style = if arg_str.contains("Button::Primary") {
+                        Some("primary")
+                    } else if arg_str.contains("Button::Secondary") {
+                        Some("secondary")
+                    } else if arg_str.contains("Button::Success") {
+                        Some("success")
+                    } else if arg_str.contains("Button::Destructive") {
+                        Some("danger")
+                    } else if arg_str.contains("Button::Text") {
+                        Some("text")
+                    } else {
+                        None
+                    };
+
+                    if let Some(st) = parsed_style {
+                        if node.properties.style.as_deref() != Some(st) {
+                            patches.push(PropertyPatch {
+                                widget_id: node.id.clone(),
+                                property_name: "style".to_string(),
+                                old_value: node.properties.style.clone(),
+                                new_value: st.to_string(),
+                            });
+                            node.properties.style = Some(st.to_string());
+                        }
+                    }
                 }
             }
         }
@@ -484,13 +679,15 @@ impl ReverseParser {
         doc: &mut RuxDocument,
         syntax_file: &File,
         patches: &mut Vec<PropertyPatch>,
+        mut cache: Option<&mut crate::ast_cache::AstCache>,
     ) -> Result<(), CodegenError> {
         let events = EventCollector::collect_document(doc);
 
         for item in &syntax_file.items {
             if let Item::Fn(ItemFn { sig, block, .. }) = item {
                 if sig.ident == "render_ui" {
-                    Self::reconcile_egui_block(&mut doc.root, &block.stmts, &events, patches, true);
+                    let sub_cache = cache.as_deref_mut();
+                    Self::reconcile_egui_block(&mut doc.root, &block.stmts, &events, patches, true, sub_cache);
                 }
             }
         }
@@ -504,12 +701,31 @@ impl ReverseParser {
         events: &[crate::events::BoundEvent],
         patches: &mut Vec<PropertyPatch>,
         is_root_block: bool,
+        mut cache: Option<&mut crate::ast_cache::AstCache>,
     ) {
+        let block_hash = crate::ast_cache::AstCache::compute_stmts_hash(stmts);
+        let has_children = !node.children.is_empty();
+        let cache_key = format!("egui:{}", node.id);
+
+        let bypass = if let Some(ref mut c) = cache {
+            c.should_bypass(&cache_key, block_hash, has_children)
+        } else {
+            crate::ast_cache::AstCache::global()
+                .lock()
+                .unwrap()
+                .should_bypass(&cache_key, block_hash, has_children)
+        };
+
+        if bypass {
+            return;
+        }
+
         let mut child_index = 0;
 
         for stmt in stmts {
             match stmt {
                 Stmt::Expr(expr, _) => {
+                    let sub_cache = cache.as_deref_mut();
                     Self::reconcile_egui_expr(
                         node,
                         expr,
@@ -517,10 +733,12 @@ impl ReverseParser {
                         events,
                         patches,
                         is_root_block,
+                        sub_cache,
                     );
                 }
                 Stmt::Local(local) => {
                     if let Some(init) = &local.init {
+                        let sub_cache = cache.as_deref_mut();
                         Self::reconcile_egui_expr(
                             node,
                             &init.expr,
@@ -528,11 +746,21 @@ impl ReverseParser {
                             events,
                             patches,
                             is_root_block,
+                            sub_cache,
                         );
                     }
                 }
                 _ => {}
             }
+        }
+
+        if let Some(ref mut c) = cache {
+            c.update(cache_key, block_hash);
+        } else {
+            crate::ast_cache::AstCache::global()
+                .lock()
+                .unwrap()
+                .update(cache_key, block_hash);
         }
     }
 
@@ -543,18 +771,34 @@ impl ReverseParser {
         events: &[crate::events::BoundEvent],
         patches: &mut Vec<PropertyPatch>,
         is_root_block: bool,
+        mut cache: Option<&mut crate::ast_cache::AstCache>,
     ) {
         match expr {
             Expr::If(expr_if) => {
                 let call_info = unwrap_call_chain(&expr_if.cond);
                 let has_button = call_info.methods.iter().any(|(m, _)| m == "button");
+                let add_button_pv = call_info.methods.iter().find_map(|(m, args)| {
+                    if m == "add" || m == "add_sized" {
+                        args.last().and_then(|a| {
+                            if let Some((WidgetType::Button, pv)) = extract_from_egui_add(a) {
+                                Some(pv)
+                            } else {
+                                None
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                });
 
-                if has_button {
-                    let mut button_args = Vec::new();
-                    for (m, args) in &call_info.methods {
-                        if m == "button" {
-                            button_args = args.clone();
-                            break;
+                if has_button || add_button_pv.is_some() {
+                    let mut button_pv = add_button_pv;
+                    if button_pv.is_none() {
+                        for (m, args) in &call_info.methods {
+                            if m == "button" {
+                                button_pv = extract_property_value_from_call_args(args);
+                                break;
+                            }
                         }
                     }
 
@@ -569,61 +813,130 @@ impl ReverseParser {
                     };
 
                     if let Some(btn_node) = target_node {
-                        if let Some(txt) = extract_string_from_call_args(&button_args) {
-                            patch_text(btn_node, &txt, patches);
+                        if let Some(pv) = button_pv {
+                            patch_text_value(btn_node, pv, patches);
                         }
                     }
                     *child_index += 1;
+                } else {
+                    let cond_str = quote::quote!(#expr_if.cond).to_string();
+                    let mut cond_child = WidgetNode {
+                        id: format!("cond_{}", *child_index + 1),
+                        widget_type: WidgetType::ConditionalNode,
+                        slot: None,
+                        properties: rux_ast::widget::WidgetProperties {
+                            condition: Some(cond_str),
+                            ..Default::default()
+                        },
+                        layout: None,
+                        events: rux_ast::widget::WidgetEvents::default(),
+                        bindings: rux_ast::widget::WidgetBindings::default(),
+                        animations: Vec::new(),
+                        children: Vec::new(),
+                    };
+                    let sub_cache = cache.as_deref_mut();
+                    Self::reconcile_egui_block(&mut cond_child, &expr_if.then_branch.stmts, events, patches, false, sub_cache);
+                    if *child_index < node.children.len() {
+                        node.children[*child_index] = cond_child;
+                    } else {
+                        node.children.push(cond_child);
+                    }
+                    *child_index += 1;
+                }
+            }
+            Expr::Match(expr_match) => {
+                let cond_str = format!("match {}", quote::quote!(#expr_match.expr));
+                let mut cond_child = WidgetNode {
+                    id: format!("cond_{}", *child_index + 1),
+                    widget_type: WidgetType::ConditionalNode,
+                    slot: None,
+                    properties: rux_ast::widget::WidgetProperties {
+                        condition: Some(cond_str),
+                        ..Default::default()
+                    },
+                    layout: None,
+                    events: rux_ast::widget::WidgetEvents::default(),
+                    bindings: rux_ast::widget::WidgetBindings::default(),
+                    animations: Vec::new(),
+                    children: Vec::new(),
+                };
+                for arm in &expr_match.arms {
+                    if let Expr::Block(b) = &*arm.body {
+                        let sub_cache = cache.as_deref_mut();
+                        Self::reconcile_egui_block(&mut cond_child, &b.block.stmts, events, patches, false, sub_cache);
+                    } else {
+                        let sub_cache = cache.as_deref_mut();
+                        Self::reconcile_egui_expr(&mut cond_child, &arm.body, &mut 0, events, patches, false, sub_cache);
+                    }
+                }
+                if *child_index < node.children.len() {
+                    node.children[*child_index] = cond_child;
+                } else {
+                    node.children.push(cond_child);
+                }
+                *child_index += 1;
+            }
+            Expr::Closure(closure) => {
+                if let Expr::Block(b) = &*closure.body {
+                    let sub_cache = cache.as_deref_mut();
+                    Self::reconcile_egui_block(node, &b.block.stmts, events, patches, is_root_block, sub_cache);
+                } else {
+                    let sub_cache = cache.as_deref_mut();
+                    Self::reconcile_egui_expr(node, &closure.body, child_index, events, patches, is_root_block, sub_cache);
                 }
             }
             Expr::MethodCall(method_call) => {
                 let method_name = method_call.method.to_string();
 
-                if method_name == "vertical" || method_name == "horizontal" {
-                    if let Some(closure_body) = extract_closure_stmts(&method_call.args) {
-                        if is_root_block && *child_index == 0 {
-                            Self::reconcile_egui_block(
-                                node,
-                                &closure_body,
-                                events,
-                                patches,
-                                false,
-                            );
-                        } else if *child_index < node.children.len() {
-                            let child_node = &mut node.children[*child_index];
-                            Self::reconcile_egui_block(
-                                child_node,
-                                &closure_body,
-                                events,
-                                patches,
-                                false,
-                            );
-                            *child_index += 1;
-                        } else {
-                            Self::reconcile_egui_block(
-                                node,
-                                &closure_body,
-                                events,
-                                patches,
-                                false,
-                            );
-                        }
+                if let Some(closure_body) = extract_closure_stmts(&method_call.args) {
+                    if is_root_block && *child_index == 0 {
+                        let sub_cache = cache.as_deref_mut();
+                        Self::reconcile_egui_block(
+                            node,
+                            &closure_body,
+                            events,
+                            patches,
+                            false,
+                            sub_cache,
+                        );
+                    } else if *child_index < node.children.len() {
+                        let child_node = &mut node.children[*child_index];
+                        let sub_cache = cache.as_deref_mut();
+                        Self::reconcile_egui_block(
+                            child_node,
+                            &closure_body,
+                            events,
+                            patches,
+                            false,
+                            sub_cache,
+                        );
+                        *child_index += 1;
+                    } else {
+                        let sub_cache = cache;
+                        Self::reconcile_egui_block(
+                            node,
+                            &closure_body,
+                            events,
+                            patches,
+                            false,
+                            sub_cache,
+                        );
                     }
                 } else if method_name == "button" {
                     let args: Vec<&Expr> = method_call.args.iter().collect();
-                    if *child_index < node.children.len() {
-                        let target_node = &mut node.children[*child_index];
-                        if let Some(txt) = extract_string_from_call_args(&args) {
-                            patch_text(target_node, &txt, patches);
+                    let target_node = find_next_matching_child(node, *child_index, WidgetType::Button);
+                    if let Some(btn_node) = target_node {
+                        if let Some(pv) = extract_property_value_from_call_args(&args) {
+                            patch_text_value(btn_node, pv, patches);
                         }
-                        *child_index += 1;
                     }
+                    *child_index += 1;
                 } else if method_name == "label" {
                     let args: Vec<&Expr> = method_call.args.iter().collect();
                     let target_node = find_next_matching_child(node, *child_index, WidgetType::Label);
                     if let Some(lbl_node) = target_node {
-                        if let Some(txt) = extract_string_from_call_args(&args) {
-                            patch_text(lbl_node, &txt, patches);
+                        if let Some(pv) = extract_property_value_from_call_args(&args) {
+                            patch_text_value(lbl_node, pv, patches);
                         }
                     }
                     *child_index += 1;
@@ -636,12 +949,114 @@ impl ReverseParser {
                     };
 
                     if let Some(chk_node) = target_node {
-                        if let Some(txt) = extract_string_from_call_args(&args) {
-                            patch_text(chk_node, &txt, patches);
+                        if let Some(pv) = extract_property_value_from_call_args(&args) {
+                            patch_text_value(chk_node, pv, patches);
                         }
                     }
                     *child_index += 1;
                 } else if method_name == "text_edit_singleline" {
+                    *child_index += 1;
+                } else if (method_name == "add" || method_name == "add_sized") && !method_call.args.is_empty() {
+                    let widget_arg = method_call.args.last().unwrap();
+                    if let Some((wtype, pv)) = extract_from_egui_add(widget_arg) {
+                        let target_node = find_next_matching_child(node, *child_index, wtype.clone());
+                        if let Some(tn) = target_node {
+                            if wtype == WidgetType::Image {
+                                patch_image_path(tn, pv.as_str(), patches);
+                            } else {
+                                patch_text_value(tn, pv, patches);
+                            }
+                        } else {
+                            let new_child = WidgetNode {
+                                id: format!("img_{}", *child_index + 1),
+                                widget_type: wtype.clone(),
+                                slot: None,
+                                properties: rux_ast::widget::WidgetProperties {
+                                    image_path: if wtype == WidgetType::Image { Some(pv.as_str().to_string()) } else { None },
+                                    ..Default::default()
+                                },
+                                layout: None,
+                                events: rux_ast::widget::WidgetEvents::default(),
+                                bindings: rux_ast::widget::WidgetBindings::default(),
+                                animations: Vec::new(),
+                                children: Vec::new(),
+                            };
+                            patches.push(PropertyPatch {
+                                widget_id: new_child.id.clone(),
+                                property_name: "created".to_string(),
+                                old_value: None,
+                                new_value: format!("{:?}", new_child.widget_type),
+                            });
+                            if *child_index < node.children.len() {
+                                node.children[*child_index] = new_child;
+                            } else {
+                                node.children.push(new_child);
+                            }
+                        }
+                        *child_index += 1;
+                    } else {
+                        *child_index += 1;
+                    }
+                } else if method_name == "image" {
+                    let args: Vec<&Expr> = method_call.args.iter().collect();
+                    let img_path = args.first().and_then(|a| extract_image_path_from_expr(a))
+                        .or_else(|| extract_image_path_from_expr(expr));
+                    let target_node = find_next_matching_child(node, *child_index, WidgetType::Image);
+                    if let Some(img_node) = target_node {
+                        if let Some(ref p) = img_path {
+                            patch_image_path(img_node, p, patches);
+                        }
+                    } else if let Some(ref p) = img_path {
+                        let new_child = WidgetNode {
+                            id: format!("img_{}", *child_index + 1),
+                            widget_type: WidgetType::Image,
+                            slot: None,
+                            properties: rux_ast::widget::WidgetProperties {
+                                image_path: Some(p.clone()),
+                                ..Default::default()
+                            },
+                            layout: None,
+                            events: rux_ast::widget::WidgetEvents::default(),
+                            bindings: rux_ast::widget::WidgetBindings::default(),
+                            animations: Vec::new(),
+                            children: Vec::new(),
+                        };
+                        patches.push(PropertyPatch {
+                            widget_id: new_child.id.clone(),
+                            property_name: "created".to_string(),
+                            old_value: None,
+                            new_value: format!("{:?}", new_child.widget_type),
+                        });
+                        if *child_index < node.children.len() {
+                            node.children[*child_index] = new_child;
+                        } else {
+                            node.children.push(new_child);
+                        }
+                    }
+                    *child_index += 1;
+                } else {
+                    // Unknown method on UI or widget -> map to GenericWidget
+                    let full_call = quote::quote!(#method_call).to_string();
+                    let generic_child = WidgetNode {
+                        id: format!("generic_{}", *child_index + 1),
+                        widget_type: WidgetType::GenericWidget,
+                        slot: None,
+                        properties: rux_ast::widget::WidgetProperties {
+                            custom_type: Some(method_name.clone()),
+                            raw_args: Some(full_call),
+                            ..Default::default()
+                        },
+                        layout: None,
+                        events: rux_ast::widget::WidgetEvents::default(),
+                        bindings: rux_ast::widget::WidgetBindings::default(),
+                        animations: Vec::new(),
+                        children: Vec::new(),
+                    };
+                    if *child_index < node.children.len() {
+                        node.children[*child_index] = generic_child;
+                    } else {
+                        node.children.push(generic_child);
+                    }
                     *child_index += 1;
                 }
             }
@@ -653,6 +1068,7 @@ impl ReverseParser {
         doc: &mut RuxDocument,
         syntax_file: &File,
         patches: &mut Vec<PropertyPatch>,
+        mut cache: Option<&mut crate::ast_cache::AstCache>,
     ) -> Result<(), CodegenError> {
         let events = EventCollector::collect_document(doc);
 
@@ -661,11 +1077,13 @@ impl ReverseParser {
                 for stmt in &block.stmts {
                     if let Stmt::Expr(expr, _) = stmt {
                         let unwrapped = unwrap_method_calls(expr);
+                        let sub_cache = cache.as_deref_mut();
                         Self::reconcile_iced_container(
                             &mut doc.root,
                             unwrapped.base_expr,
                             &events,
                             patches,
+                            sub_cache,
                         );
                     }
                 }
@@ -744,7 +1162,14 @@ fn infer_iced_widget_type(call_info: &UnwrappedCall) -> Option<WidgetType> {
         "progress_bar" => Some(WidgetType::ProgressBar),
         "container" => Some(WidgetType::VBox),
         "scrollable" => Some(WidgetType::ScrollPane),
-        _ => None,
+        "image" => Some(WidgetType::Image),
+        _ => {
+            match call_info.base_expr {
+                Expr::If(_) | Expr::Match(_) => Some(WidgetType::ConditionalNode),
+                Expr::Call(_) | Expr::MethodCall(_) => Some(WidgetType::GenericWidget),
+                _ => None,
+            }
+        }
     }
 }
 
@@ -781,6 +1206,47 @@ fn extract_closure_stmts(args: &Punctuated<Expr, Token![,]>) -> Option<Vec<Stmt>
         }
     }
     None
+}
+
+fn extract_from_egui_add(expr: &Expr) -> Option<(WidgetType, PropertyValue)> {
+    let call_info = unwrap_call_chain(expr);
+    let base_expr = call_info.base_expr;
+    let base_str = quote::quote!(#base_expr).to_string();
+
+    for (m, args) in &call_info.methods {
+        if m == "text" {
+            if let Some(pv) = extract_property_value_from_call_args(args) {
+                return Some((WidgetType::Slider, pv));
+            }
+        }
+    }
+
+    if base_str.contains("Button") {
+        let pv = extract_property_value_from_call_args(&call_info.base_args)
+            .unwrap_or_else(|| PropertyValue::Static("Button".to_string()));
+        Some((WidgetType::Button, pv))
+    } else if base_str.contains("Label") {
+        let pv = extract_property_value_from_call_args(&call_info.base_args)
+            .unwrap_or_else(|| PropertyValue::Static("Label".to_string()));
+        Some((WidgetType::Label, pv))
+    } else if base_str.contains("Checkbox") {
+        let pv = extract_property_value_from_call_args(&call_info.base_args)
+            .unwrap_or_else(|| PropertyValue::Static("Checkbox".to_string()));
+        Some((WidgetType::Checkbox, pv))
+    } else if base_str.contains("Slider") {
+        let pv = extract_property_value_from_call_args(&call_info.base_args)
+            .unwrap_or_else(|| PropertyValue::Static("Slider".to_string()));
+        Some((WidgetType::Slider, pv))
+    } else if base_str.contains("Image") {
+        let path = extract_image_path_from_expr(expr).unwrap_or_else(|| {
+            extract_property_value_from_call_args(&call_info.base_args)
+                .map(|pv| pv.as_str().to_string())
+                .unwrap_or_else(|| "assets/image.png".to_string())
+        });
+        Some((WidgetType::Image, PropertyValue::Static(path)))
+    } else {
+        None
+    }
 }
 
 fn find_next_matching_child(
@@ -891,51 +1357,86 @@ fn extract_ui_message_variant(expr: &Expr) -> Option<String> {
     }
 }
 
-fn extract_string_from_call_args(args: &[&Expr]) -> Option<String> {
+pub fn extract_property_value_from_call_args(args: &[&Expr]) -> Option<PropertyValue> {
+    // First pass: prefer literal strings
     for arg in args {
-        if let Some(s) = extract_string_lit(arg) {
-            return Some(s);
+        if let Some(pv @ PropertyValue::Static(_)) = extract_property_value(arg) {
+            return Some(pv);
+        }
+    }
+    // Second pass: fallback to state / variable bindings
+    for arg in args {
+        if let Some(pv) = extract_property_value(arg) {
+            return Some(pv);
         }
     }
     None
 }
 
-fn extract_string_lit(expr: &Expr) -> Option<String> {
+pub fn extract_property_value(expr: &Expr) -> Option<PropertyValue> {
     match expr {
         Expr::Lit(ExprLit {
             lit: Lit::Str(lit_str),
             ..
-        }) => Some(lit_str.value()),
+        }) => Some(PropertyValue::Static(lit_str.value())),
         Expr::Call(ExprCall { func, args, .. }) => {
             let func_ident = extract_path_ident(func).unwrap_or_default();
-            if func_ident == "text" || func_ident == "format" {
-                for arg in args {
-                    if let Some(s) = extract_string_lit(arg) {
-                        return Some(s);
-                    }
+            if func_ident == "text" {
+                if let Some(first) = args.first() {
+                    return extract_property_value(first);
                 }
+            } else if func_ident == "format" {
+                return Some(PropertyValue::Binding(quote::quote!(#expr).to_string()));
             }
             for arg in args {
-                if let Some(s) = extract_string_lit(arg) {
-                    return Some(s);
+                if let Some(pv) = extract_property_value(arg) {
+                    return Some(pv);
                 }
             }
             None
         }
         Expr::MethodCall(method_call) => {
-            if let Some(s) = extract_string_lit(&method_call.receiver) {
-                return Some(s);
+            if method_call.method == "text" {
+                if let Some(first) = method_call.args.first() {
+                    return extract_property_value(first);
+                }
+            }
+            if let Some(pv) = extract_property_value(&method_call.receiver) {
+                return Some(pv);
             }
             for arg in &method_call.args {
-                if let Some(s) = extract_string_lit(arg) {
-                    return Some(s);
+                if let Some(pv) = extract_property_value(arg) {
+                    return Some(pv);
                 }
             }
             None
         }
-        Expr::Reference(ref_expr) => extract_string_lit(&ref_expr.expr),
+        Expr::Reference(ref_expr) => {
+            // Mutable references (&mut state.field) are state-binding targets, not text values
+            if ref_expr.mutability.is_some() {
+                None
+            } else {
+                extract_property_value(&ref_expr.expr)
+            }
+        }
+        Expr::Field(_) | Expr::Path(_) => {
+            let raw = quote::quote!(#expr).to_string().replace(" ", "");
+            if raw == "None" {
+                None
+            } else {
+                Some(PropertyValue::Binding(raw))
+            }
+        }
         _ => None,
     }
+}
+
+fn extract_string_from_call_args(args: &[&Expr]) -> Option<String> {
+    extract_property_value_from_call_args(args).map(|pv| pv.as_str().to_string())
+}
+
+fn extract_string_lit(expr: &Expr) -> Option<String> {
+    extract_property_value(expr).map(|pv| pv.as_str().to_string())
 }
 
 fn extract_optional_string_lit(expr: &Expr) -> Option<String> {
@@ -948,14 +1449,61 @@ fn extract_optional_string_lit(expr: &Expr) -> Option<String> {
                 None
             }
         }
-        Expr::Path(ExprPath { path, .. }) => {
-            if path.is_ident("None") {
-                None
-            } else {
-                None
-            }
-        }
+        Expr::Path(_) => None,
         _ => extract_string_lit(expr),
+    }
+}
+
+pub fn extract_image_path_from_expr(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Lit(ExprLit {
+            lit: Lit::Str(lit_str),
+            ..
+        }) => Some(rux_ast::asset::normalize_image_path(&lit_str.value())),
+        Expr::Macro(ExprMacro { mac, .. }) => {
+            // e.g. include_bytes!("path") or similar asset macros
+            let tokens_str = mac.tokens.to_string();
+            if let Some(start) = tokens_str.find('"') {
+                if let Some(end) = tokens_str[start + 1..].find('"') {
+                    let path = &tokens_str[start + 1..start + 1 + end];
+                    return Some(rux_ast::asset::normalize_image_path(path));
+                }
+            }
+            None
+        }
+        Expr::Call(ExprCall { args, func, .. }) => {
+            let func_ident = extract_path_ident(func).unwrap_or_default();
+            if func_ident == "from_path" || func_ident == "new" || func_ident == "from_bytes" || func_ident == "image" {
+                if let Some(first) = args.first() {
+                    if let Some(p) = extract_image_path_from_expr(first) {
+                        return Some(p);
+                    }
+                }
+            }
+            for arg in args {
+                if let Some(p) = extract_image_path_from_expr(arg) {
+                    return Some(p);
+                }
+            }
+            None
+        }
+        Expr::MethodCall(method_call) => {
+            if method_call.method == "image" || method_call.method == "new" {
+                if let Some(first) = method_call.args.first() {
+                    if let Some(p) = extract_image_path_from_expr(first) {
+                        return Some(p);
+                    }
+                }
+            }
+            for arg in &method_call.args {
+                if let Some(p) = extract_image_path_from_expr(arg) {
+                    return Some(p);
+                }
+            }
+            extract_image_path_from_expr(&method_call.receiver)
+        }
+        Expr::Reference(ref_expr) => extract_image_path_from_expr(&ref_expr.expr),
+        _ => None,
     }
 }
 
@@ -999,33 +1547,75 @@ pub fn find_node_mut<'a>(node: &'a mut WidgetNode, target_id: &str) -> Option<&'
     None
 }
 
-fn patch_text(node: &mut WidgetNode, new_text: &str, patches: &mut Vec<PropertyPatch>) {
+pub fn patch_text_value(node: &mut WidgetNode, new_value: PropertyValue, patches: &mut Vec<PropertyPatch>) {
     let old_text = node.properties.text.clone();
-    if old_text.as_deref() != Some(new_text) {
+    let is_diff = match &old_text {
+        Some(old) => old != &new_value,
+        None => true,
+    };
+    if is_diff {
         patches.push(PropertyPatch {
             widget_id: node.id.clone(),
             property_name: "text".to_string(),
-            old_value: old_text,
-            new_value: new_text.to_string(),
+            old_value: old_text.map(|v| v.to_string()),
+            new_value: new_value.to_string(),
         });
-        node.properties.text = Some(new_text.to_string());
+        node.properties.text = Some(new_value);
     }
 }
 
-fn patch_placeholder(
+pub fn patch_text(node: &mut WidgetNode, new_text: &str, patches: &mut Vec<PropertyPatch>) {
+    patch_text_value(node, PropertyValue::Static(new_text.to_string()), patches);
+}
+
+pub fn patch_placeholder_value(
+    node: &mut WidgetNode,
+    new_value: PropertyValue,
+    patches: &mut Vec<PropertyPatch>,
+) {
+    let old_placeholder = node.properties.placeholder.clone();
+    let is_diff = match &old_placeholder {
+        Some(old) => old != &new_value,
+        None => true,
+    };
+    if is_diff {
+        patches.push(PropertyPatch {
+            widget_id: node.id.clone(),
+            property_name: "placeholder".to_string(),
+            old_value: old_placeholder.map(|v| v.to_string()),
+            new_value: new_value.to_string(),
+        });
+        node.properties.placeholder = Some(new_value);
+    }
+}
+
+pub fn patch_placeholder(
     node: &mut WidgetNode,
     new_placeholder: &str,
     patches: &mut Vec<PropertyPatch>,
 ) {
-    let old_placeholder = node.properties.placeholder.clone();
-    if old_placeholder.as_deref() != Some(new_placeholder) {
+    patch_placeholder_value(node, PropertyValue::Static(new_placeholder.to_string()), patches);
+}
+
+pub fn patch_image_path(
+    node: &mut WidgetNode,
+    new_path: &str,
+    patches: &mut Vec<PropertyPatch>,
+) {
+    let normalized = rux_ast::asset::normalize_image_path(new_path);
+    let old_path = node.properties.image_path.clone();
+    let is_diff = match &old_path {
+        Some(old) => old != &normalized,
+        None => true,
+    };
+    if is_diff {
         patches.push(PropertyPatch {
             widget_id: node.id.clone(),
-            property_name: "placeholder".to_string(),
-            old_value: old_placeholder,
-            new_value: new_placeholder.to_string(),
+            property_name: "image_path".to_string(),
+            old_value: old_path,
+            new_value: normalized.clone(),
         });
-        node.properties.placeholder = Some(new_placeholder.to_string());
+        node.properties.image_path = Some(normalized);
     }
 }
 
@@ -1092,7 +1682,7 @@ mod tests {
             serde_json::from_str(sample_json).expect("Sample app must parse");
 
         let mut btn = create_test_node("btn_submit", WidgetType::Button);
-        btn.properties.text = Some("Submit".to_string());
+        btn.properties.text = Some(PropertyValue::Static("Submit".to_string()));
         btn.events.on_click = Some(EventHandler {
             handler_name: "on_submit".to_string(),
             message: None,
@@ -1100,10 +1690,10 @@ mod tests {
         });
 
         let mut lbl = create_test_node("lbl_status", WidgetType::Label);
-        lbl.properties.text = Some("Welcome".to_string());
+        lbl.properties.text = Some(PropertyValue::Static("Welcome".to_string()));
 
         let mut txt = create_test_node("txt_input", WidgetType::TextInput);
-        txt.properties.placeholder = Some("Enter name".to_string());
+        txt.properties.placeholder = Some(PropertyValue::Static("Enter name".to_string()));
         txt.events.on_change = Some(EventHandler {
             handler_name: "on_name_change".to_string(),
             message: None,
@@ -1111,7 +1701,7 @@ mod tests {
         });
 
         let mut chk = create_test_node("chk_agree", WidgetType::Checkbox);
-        chk.properties.text = Some("Accept terms".to_string());
+        chk.properties.text = Some(PropertyValue::Static("Accept terms".to_string()));
         chk.events.on_click = Some(EventHandler {
             handler_name: "on_agree_toggle".to_string(),
             message: None,

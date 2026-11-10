@@ -23,6 +23,7 @@ import { useEditorStore } from "../../state/editorStore";
 import { useDocumentMutation } from "../../hooks/useDocumentMutation";
 import { findNodeById, findParentNode } from "../../utils/treeTraversal";
 import { isContainerWidget } from "../../utils/widgetFactory";
+import { SliderInput } from "../../components/inputs";
 import {
     CollapsibleSection,
     PropertyRow,
@@ -912,11 +913,12 @@ const FlexContainerEditor: FC<FlexContainerEditorProps> = ({
         </PropertyRow>
 
         <PropertyRow label="Gap">
-            <NumericInput
+            <SliderInput
                 value={flex.gap ?? 0}
                 min={0}
-                max={999}
+                max={100}
                 step={1}
+                unit="px"
                 onChange={(v) =>
                     onChange({
                         type: "flex",
@@ -1041,11 +1043,12 @@ const GridContainerEditor: FC<GridContainerEditorProps> = ({
             </div>
 
             <PropertyRow label="Col Gap">
-                <NumericInput
+                <SliderInput
                     value={grid.column_gap ?? 0}
                     min={0}
-                    max={999}
+                    max={100}
                     step={1}
+                    unit="px"
                     onChange={(v) =>
                         onChange({
                             type: "grid",
@@ -1056,11 +1059,12 @@ const GridContainerEditor: FC<GridContainerEditorProps> = ({
                 />
             </PropertyRow>
             <PropertyRow label="Row Gap">
-                <NumericInput
+                <SliderInput
                     value={grid.row_gap ?? 0}
                     min={0}
-                    max={999}
+                    max={100}
                     step={1}
+                    unit="px"
                     onChange={(v) =>
                         onChange({
                             type: "grid",

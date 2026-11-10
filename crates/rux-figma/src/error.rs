@@ -23,6 +23,9 @@ pub enum FigmaError {
     #[error("Geometry resolution error: {0}")]
     Geometry(String),
 
+    #[error("Invalid Figma JSON: {0}")]
+    InvalidJson(String),
+
     #[error("Asset download error: {0}")]
     AssetDownload(String),
 }

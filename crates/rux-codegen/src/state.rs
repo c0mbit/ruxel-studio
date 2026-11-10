@@ -113,7 +113,7 @@ impl StateInferenceEngine {
                         StateDefaultValue::VecString(node.properties.options.clone()),
                     ),
                     _ => {
-                        let text = node.properties.text.clone().unwrap_or_default();
+                        let text = node.properties.text.as_deref().unwrap_or_default().to_string();
                         (StateType::String, StateDefaultValue::String(text))
                     }
                 };
@@ -222,7 +222,7 @@ impl StateInferenceEngine {
                 let name = to_snake_case(&node.id);
                 if !seen_names.contains(&name) {
                     seen_names.insert(name.clone());
-                    let text = node.properties.text.clone().unwrap_or_default();
+                    let text = node.properties.text.as_deref().unwrap_or_default().to_string();
                     fields.push(InferredField {
                         name,
                         field_type: StateType::String,
@@ -270,8 +270,8 @@ impl StateInferenceEngine {
                     });
                 }
             }
-            WidgetType::TableView | WidgetType::TreeView => {
-                if node.bindings.items.is_none() {
+            WidgetType::TableView | WidgetType::TreeView
+                if node.bindings.items.is_none() => {
                     let name = to_snake_case(&node.id);
                     if !seen_names.contains(&name) {
                         seen_names.insert(name.clone());
@@ -284,7 +284,6 @@ impl StateInferenceEngine {
                         });
                     }
                 }
-            }
             _ => {}
         }
     }

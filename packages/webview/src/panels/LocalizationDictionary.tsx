@@ -210,7 +210,13 @@ export const LocalizationDictionary: FC<LocalizationDictionaryProps> = ({
         const extracted: Record<string, string> = {};
         function walk(node: WidgetNode) {
             if (node.properties?.text_key) {
-                const textVal = node.properties.text ?? node.properties.text_key;
+                const rawText = node.properties.text;
+                const textVal =
+                    typeof rawText === "string"
+                        ? rawText
+                        : typeof rawText === "object" && rawText && "value" in rawText
+                        ? String((rawText as { value: unknown }).value)
+                        : node.properties.text_key;
                 extracted[node.properties.text_key] = textVal;
             }
             if (node.children) {

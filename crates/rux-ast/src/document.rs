@@ -15,6 +15,14 @@ pub struct I18nConfig {
     pub locales: BTreeMap<String, BTreeMap<String, String>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct ComponentDefinition {
+    pub name: String,
+    pub root: WidgetNode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_path: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RuxDocument {
     #[serde(rename = "$schema")]
@@ -35,6 +43,8 @@ pub struct RuxDocument {
     #[serde(default)]
     pub theme: ThemeConfig,
     pub root: WidgetNode,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub components: BTreeMap<String, ComponentDefinition>,
 }
 
 impl Default for RuxDocument {
@@ -49,6 +59,7 @@ impl Default for RuxDocument {
             i18n: None,
             theme: ThemeConfig::default(),
             root: WidgetNode::default(),
+            components: BTreeMap::new(),
         }
     }
 }
@@ -127,6 +138,12 @@ impl RuxDocument {
                 WidgetNode::default()
             };
 
+            let components = if let Some(comp_val) = map.get("components") {
+                serde_json::from_value::<BTreeMap<String, ComponentDefinition>>(comp_val.clone()).unwrap_or_default()
+            } else {
+                BTreeMap::new()
+            };
+
             return Ok(RuxDocument {
                 schema_ref,
                 schema_version,
@@ -137,6 +154,7 @@ impl RuxDocument {
                 i18n,
                 theme,
                 root,
+                components,
             });
         }
 

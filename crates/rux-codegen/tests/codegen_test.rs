@@ -35,7 +35,7 @@ fn test_state_inference_explicit_bindings() {
 
     let mut input = create_test_node("user_input", WidgetType::TextInput);
     input.bindings.value = Some("app_state.username".to_string());
-    input.properties.text = Some("alex".to_string());
+    input.properties.text = Some("alex".into());
 
     let mut chk = create_test_node("chk_active", WidgetType::Checkbox);
     chk.bindings.value = Some("app_state.is_active".to_string());

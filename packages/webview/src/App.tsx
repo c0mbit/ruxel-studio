@@ -1,4 +1,4 @@
-import { FC, useCallback } from "react";
+import { FC, useCallback, useEffect } from "react";
 import { BottomBar } from "./components/BottomBar";
 import { SceneBuilderView } from "./components/SceneBuilderView";
 import { TextViewer } from "./components/TextViewer";
@@ -14,6 +14,8 @@ import { useDocumentMutation } from "./hooks/useDocumentMutation";
 import { useEditorStore } from "./state/editorStore";
 import { removeChild, duplicateNode } from "./utils/treeTraversal";
 import { collectAllIds } from "./utils/widgetFactory";
+import { sharedCrdtBridge } from "./state/crdtStore";
+import { uint8ArrayToBase64 } from "./crdt/crdtBridge";
 
 export const App: FC = () => {
     const viewMode = useEditorStore((state) => state.viewMode);
@@ -26,12 +28,22 @@ export const App: FC = () => {
 
     const {
         sendDocumentChange,
+        sendCrdtDelta,
         sendSelectNode,
         sendValidateRequest,
         sendSwitchViewMode,
         sendRequestSave,
         sendImportFigma,
     } = useExtensionIpc();
+
+    useEffect(() => {
+        const unsubscribe = sharedCrdtBridge.onLocalDelta((delta, stateVector) => {
+            const deltaBase64 = uint8ArrayToBase64(delta);
+            const svBase64 = uint8ArrayToBase64(stateVector);
+            sendCrdtDelta(deltaBase64, svBase64, "CRDT Local Mutation");
+        });
+        return unsubscribe;
+    }, [sendCrdtDelta]);
 
     const { executeNodeMutation } = useDocumentMutation(sendDocumentChange);
 
@@ -105,8 +117,8 @@ export const App: FC = () => {
             <FigmaImportModal
                 isOpen={isFigmaImportOpen}
                 onClose={() => setIsFigmaImportOpen(false)}
-                onImport={(token, url, nodeId) => {
-                    sendImportFigma(token, url, nodeId);
+                onImport={(token, url, nodeId, figmaJson) => {
+                    sendImportFigma(token, url, nodeId, figmaJson);
                 }}
             />
 

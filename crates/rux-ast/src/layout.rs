@@ -1,37 +1,28 @@
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FlexDirection {
     Row,
+    #[default]
     Column,
     RowReverse,
     ColumnReverse,
 }
 
-impl Default for FlexDirection {
-    fn default() -> Self {
-        Self::Column
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FlexWrap {
+    #[default]
     NoWrap,
     Wrap,
     WrapReverse,
 }
 
-impl Default for FlexWrap {
-    fn default() -> Self {
-        Self::NoWrap
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JustifyContent {
+    #[default]
     FlexStart,
     FlexEnd,
     Center,
@@ -40,43 +31,27 @@ pub enum JustifyContent {
     SpaceEvenly,
 }
 
-impl Default for JustifyContent {
-    fn default() -> Self {
-        Self::FlexStart
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AlignItems {
     FlexStart,
     FlexEnd,
     Center,
+    #[default]
     Stretch,
     Baseline,
 }
 
-impl Default for AlignItems {
-    fn default() -> Self {
-        Self::Stretch
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AlignSelf {
+    #[default]
     Auto,
     FlexStart,
     FlexEnd,
     Center,
     Stretch,
     Baseline,
-}
-
-impl Default for AlignSelf {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -169,20 +144,15 @@ pub enum ContainerLayout {
     Border,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum Size {
     Fixed(f64),
     Percentage(f64),
     Fill(f64),
     HugContent,
+    #[default]
     Auto,
-}
-
-impl Default for Size {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

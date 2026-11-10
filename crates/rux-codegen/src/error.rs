@@ -6,6 +6,8 @@ pub enum CodegenError {
     AstError(String),
     #[error("Syn parse error: {0}")]
     SynParseError(String),
+    #[error("Widget not found: {0}")]
+    WidgetNotFound(String),
     #[error("Controller merge error: {0}")]
     ControllerMergeError(String),
     #[error("Serialization error: {0}")]

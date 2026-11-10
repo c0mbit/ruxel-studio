@@ -66,6 +66,7 @@ fn test_geometry_resolver_auto_layout() {
         characters: None,
         style: None,
         component_id: None,
+        ..Default::default()
     };
 
     let layout = resolver.resolve_node_layout(&node_row);
@@ -219,6 +220,7 @@ fn test_heuristic_classifier_button_and_input() {
             italic: false,
         }),
         component_id: None,
+        ..Default::default()
     };
 
     let button_frame = FigmaNode {
@@ -266,6 +268,7 @@ fn test_heuristic_classifier_button_and_input() {
         characters: None,
         style: None,
         component_id: None,
+        ..Default::default()
     };
 
     let mut counter = 0;
@@ -277,7 +280,7 @@ fn test_heuristic_classifier_button_and_input() {
 
     let converted = engine.convert_node_recursive(&button_frame, &dummy_assets, &mut counter);
     assert_eq!(converted.widget_type, WidgetType::Button);
-    assert_eq!(converted.properties.text, Some("Save Changes".to_string()));
+    assert_eq!(converted.properties.text.as_deref(), Some("Save Changes"));
     assert_eq!(converted.properties.corner_radius, Some(8.0));
     assert!(converted.children.is_empty());
 }
@@ -378,15 +381,174 @@ fn test_full_pipeline_mock_import() {
     assert_eq!(result.document.root.children.len(), 2);
     assert_eq!(result.document.root.children[0].widget_type, WidgetType::Button);
     assert_eq!(
-        result.document.root.children[0].properties.text,
-        Some("Submit Form".to_string())
+        result.document.root.children[0].properties.text.as_deref(),
+        Some("Submit Form")
     );
     assert_eq!(
         result.document.root.children[1].widget_type,
         WidgetType::TextInput
     );
     assert_eq!(
-        result.document.root.children[1].properties.placeholder,
-        Some("Enter username...".to_string())
+        result.document.root.children[1].properties.placeholder.as_deref(),
+        Some("Enter username...")
     );
+}
+
+#[test]
+fn test_figma_autolayout_to_rux_ast_translation() {
+    let engine = FigmaEngine::new();
+
+    // 1. Horizontal AutoLayout with fill width, spacing, padding
+    let h_node = FigmaNode {
+        id: "10:1".to_string(),
+        name: "HeaderRow".to_string(),
+        node_type: "FRAME".to_string(),
+        visible: true,
+        layout_mode: Some("HORIZONTAL".to_string()),
+        item_spacing: Some(16.0),
+        padding_left: Some(24.0),
+        padding_right: Some(24.0),
+        padding_top: Some(12.0),
+        padding_bottom: Some(12.0),
+        layout_sizing_horizontal: Some("FILL".to_string()),
+        layout_sizing_vertical: Some("FIXED".to_string()),
+        ..Default::default()
+    };
+    let mut counter = 0;
+    let converted_h = engine.convert_node_recursive(&h_node, &Default::default(), &mut counter);
+    assert_eq!(converted_h.widget_type, WidgetType::HBox);
+    assert_eq!(converted_h.properties.spacing, Some(16.0));
+    assert_eq!(converted_h.properties.padding, Some(12.0));
+    assert_eq!(converted_h.properties.fill_width, Some(true));
+
+    // 2. Vertical AutoLayout with fill height
+    let v_node = FigmaNode {
+        id: "10:2".to_string(),
+        name: "SidebarCol".to_string(),
+        node_type: "FRAME".to_string(),
+        visible: true,
+        layout_mode: Some("VERTICAL".to_string()),
+        item_spacing: Some(8.0),
+        padding_top: Some(16.0),
+        padding_left: Some(16.0),
+        layout_grow: Some(1.0),
+        ..Default::default()
+    };
+    let mut counter2 = 0;
+    let converted_v = engine.convert_node_recursive(&v_node, &Default::default(), &mut counter2);
+    assert_eq!(converted_v.widget_type, WidgetType::VBox);
+    assert_eq!(converted_v.properties.spacing, Some(8.0));
+    assert_eq!(converted_v.properties.fill_height, Some(true));
+
+    // 3. Grid container from WRAP AutoLayout
+    let grid_node = FigmaNode {
+        id: "10:3".to_string(),
+        name: "ProductCardGrid".to_string(),
+        node_type: "FRAME".to_string(),
+        visible: true,
+        layout_mode: Some("HORIZONTAL".to_string()),
+        layout_wrap: Some("WRAP".to_string()),
+        item_spacing: Some(20.0),
+        counter_axis_spacing: Some(20.0),
+        ..Default::default()
+    };
+    let mut counter3 = 0;
+    let converted_grid = engine.convert_node_recursive(&grid_node, &Default::default(), &mut counter3);
+    assert_eq!(converted_grid.widget_type, WidgetType::Grid);
+    assert_eq!(converted_grid.properties.spacing, Some(20.0));
+}
+
+#[test]
+fn test_figma_unsupported_vector_nodes_graceful_fallback() {
+    let engine = FigmaEngine::new();
+
+    // Star node -> GenericWidget
+    let star_node = FigmaNode {
+        id: "20:1".to_string(),
+        name: "RatingStar".to_string(),
+        node_type: "STAR".to_string(),
+        visible: true,
+        ..Default::default()
+    };
+    let mut c1 = 0;
+    let w1 = engine.convert_node_recursive(&star_node, &Default::default(), &mut c1);
+    assert_eq!(w1.widget_type, WidgetType::GenericWidget);
+    assert_eq!(w1.properties.custom_type.as_deref(), Some("star"));
+
+    // Boolean operation -> GenericWidget
+    let bool_node = FigmaNode {
+        id: "20:2".to_string(),
+        name: "SubtractMask".to_string(),
+        node_type: "BOOLEAN_OPERATION".to_string(),
+        visible: true,
+        ..Default::default()
+    };
+    let mut c2 = 0;
+    let w2 = engine.convert_node_recursive(&bool_node, &Default::default(), &mut c2);
+    assert_eq!(w2.widget_type, WidgetType::GenericWidget);
+    assert_eq!(w2.properties.custom_type.as_deref(), Some("boolean_operation"));
+
+    // Unsupported vector without icon alias -> Rectangle fallback
+    let custom_vec = FigmaNode {
+        id: "20:3".to_string(),
+        name: "ComplexVector".to_string(),
+        node_type: "VECTOR".to_string(),
+        visible: true,
+        ..Default::default()
+    };
+    let mut c3 = 0;
+    let w3 = engine.convert_node_recursive(&custom_vec, &Default::default(), &mut c3);
+    assert_eq!(w3.widget_type, WidgetType::Rectangle);
+}
+
+#[test]
+fn test_figma_import_from_plugin_json() {
+    let engine = FigmaEngine::new();
+    let plugin_json = r#"{
+        "id": "100:1",
+        "name": "DashboardApp",
+        "type": "FRAME",
+        "visible": true,
+        "layoutMode": "VERTICAL",
+        "itemSpacing": 14.0,
+        "paddingTop": 10.0,
+        "paddingLeft": 10.0,
+        "children": [
+            {
+                "id": "100:2",
+                "name": "HeaderRow",
+                "type": "FRAME",
+                "visible": true,
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 8.0,
+                "layoutSizingHorizontal": "FILL",
+                "children": [
+                    {
+                        "id": "100:3",
+                        "name": "TitleLabel",
+                        "type": "TEXT",
+                        "visible": true,
+                        "characters": "Welcome to Ruxel Studio",
+                        "children": []
+                    }
+                ]
+            },
+            {
+                "id": "100:4",
+                "name": "CustomBadge",
+                "type": "STAR",
+                "visible": true,
+                "children": []
+            }
+        ]
+    }"#;
+
+    let result = engine.import_from_json(plugin_json).expect("Plugin JSON ingestion should succeed");
+    assert_eq!(result.imported_node_count, 4);
+    assert_eq!(result.document.root.widget_type, WidgetType::VBox);
+    assert_eq!(result.document.root.properties.spacing, Some(14.0));
+    assert_eq!(result.document.root.children.len(), 2);
+    assert_eq!(result.document.root.children[0].widget_type, WidgetType::HBox);
+    assert_eq!(result.document.root.children[0].properties.fill_width, Some(true));
+    assert_eq!(result.document.root.children[1].widget_type, WidgetType::GenericWidget);
 }

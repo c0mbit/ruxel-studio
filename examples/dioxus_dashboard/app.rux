@@ -1,0 +1,195 @@
+{
+  "$schema": "https://ruxel.dev/schemas/rux-document.schema.json",
+  "metadata": {
+    "schema_version": "1.0.0",
+    "app_name": "DioxusDashboard",
+    "app_version": "0.1.0",
+    "target_frameworks": ["dioxus"],
+    "description": "Responsive analytics dashboard built with Dioxus rsx! and Ruxel Studio",
+    "authors": ["Ruxel Studio Team"],
+    "license": "MIT OR Apache-2.0",
+    "created_at": "2026-11-10T00:00:00Z",
+    "updated_at": "2026-11-10T00:00:00Z"
+  },
+  "window": {
+    "title": "Ruxel Studio — Dioxus Analytics Dashboard",
+    "initial_width": 1024.0,
+    "initial_height": 720.0,
+    "min_width": 640.0,
+    "min_height": 480.0,
+    "resizable": true,
+    "scale_mode": "logical",
+    "transparent": false,
+    "decorations": true,
+    "always_on_top": false,
+    "fullscreen": false
+  },
+  "assets": {
+    "fonts": [],
+    "icons": [],
+    "images": []
+  },
+  "themes": {
+    "default_mode": "dark",
+    "color_tokens": {
+      "light": {},
+      "dark": {}
+    },
+    "typography": {}
+  },
+  "root": {
+    "id": "dashboard_root",
+    "widget_type": "v_box",
+    "properties": {
+      "spacing": 20.0
+    },
+    "children": [
+      {
+        "id": "top_navbar",
+        "widget_type": "h_box",
+        "properties": {
+          "spacing": 16.0
+        },
+        "children": [
+          {
+            "id": "dashboard_title",
+            "widget_type": "label",
+            "properties": {
+              "text": "Executive Analytics Overview",
+              "font_size": 24.0
+            }
+          },
+          {
+            "id": "refresh_btn",
+            "widget_type": "button",
+            "properties": {
+              "text": "Refresh Data"
+            },
+            "events": {
+              "on_click": {
+                "handler_name": "on_refresh_data",
+                "message": "RefreshData"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "metrics_grid",
+        "widget_type": "h_box",
+        "properties": {
+          "spacing": 16.0
+        },
+        "children": [
+          {
+            "id": "metric_card_revenue",
+            "widget_type": "v_box",
+            "properties": {
+              "spacing": 4.0
+            },
+            "children": [
+              {
+                "id": "lbl_revenue_title",
+                "widget_type": "label",
+                "properties": {
+                  "text": "Total Revenue"
+                }
+              },
+              {
+                "id": "lbl_revenue_val",
+                "widget_type": "label",
+                "properties": {
+                  "text": "$142,850",
+                  "font_size": 22.0
+                }
+              }
+            ]
+          },
+          {
+            "id": "metric_card_users",
+            "widget_type": "v_box",
+            "properties": {
+              "spacing": 4.0
+            },
+            "children": [
+              {
+                "id": "lbl_users_title",
+                "widget_type": "label",
+                "properties": {
+                  "text": "Active Subscribers"
+                }
+              },
+              {
+                "id": "lbl_users_val",
+                "widget_type": "label",
+                "properties": {
+                  "text": "24,591",
+                  "font_size": 22.0
+                }
+              }
+            ]
+          },
+          {
+            "id": "metric_card_conversion",
+            "widget_type": "v_box",
+            "properties": {
+              "spacing": 4.0
+            },
+            "children": [
+              {
+                "id": "lbl_conversion_title",
+                "widget_type": "label",
+                "properties": {
+                  "text": "Conversion Rate"
+                }
+              },
+              {
+                "id": "lbl_conversion_val",
+                "widget_type": "label",
+                "properties": {
+                  "text": "4.82%",
+                  "font_size": 22.0
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "quick_actions_row",
+        "widget_type": "h_box",
+        "properties": {
+          "spacing": 12.0
+        },
+        "children": [
+          {
+            "id": "export_report_btn",
+            "widget_type": "button",
+            "properties": {
+              "text": "Export PDF Report"
+            },
+            "events": {
+              "on_click": {
+                "handler_name": "on_export_report",
+                "message": "ExportReport"
+              }
+            }
+          },
+          {
+            "id": "settings_shortcut_btn",
+            "widget_type": "button",
+            "properties": {
+              "text": "Configure Metrics"
+            },
+            "events": {
+              "on_click": {
+                "handler_name": "on_configure_metrics",
+                "message": "ConfigureMetrics"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

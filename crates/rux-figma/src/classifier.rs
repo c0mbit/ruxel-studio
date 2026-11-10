@@ -4,7 +4,7 @@ use rux_ast::theme::{
     BorderRadii, ColorPalette, ColorPalettes, ColorScheme, ShadowToken, SpacingScale, ThemeConfig,
     TypeScale, TypeStyle,
 };
-use rux_ast::widget::{WidgetProperties, WidgetType};
+use rux_ast::widget::{PropertyValue, WidgetProperties, WidgetType};
 
 use crate::downloader::DownloadedAssetsReport;
 use crate::models::FigmaNode;
@@ -37,7 +37,7 @@ impl HeuristicClassifier {
 
         if node.node_type == "TEXT" {
             let mut props = WidgetProperties::default();
-            props.text = node.characters.clone();
+            props.text = node.characters.clone().map(PropertyValue::Static);
             props.opacity = node.opacity;
 
             if let Some(ref style) = node.style {
@@ -66,17 +66,36 @@ impl HeuristicClassifier {
             props.border_color = node.primary_stroke_color();
             props.border_width = node.stroke_weight;
             props.corner_radius = node.corner_radius;
+            props.opacity = node.opacity;
 
+            let has_icon_alias = assets.and_then(|report| report.node_icon_map.get(&node.id)).is_some();
             if let Some(report) = assets {
                 if let Some(alias) = report.node_icon_map.get(&node.id) {
-                    props.text = Some(alias.clone());
+                    props.text = Some(PropertyValue::Static(alias.clone()));
                 }
             }
 
+            // Graceful fallback to GenericWidget or Rectangle for unsupported vector nodes
             let widget_type = match node.node_type.as_str() {
                 "ELLIPSE" => WidgetType::Circle,
                 "LINE" => WidgetType::Line,
-                _ => WidgetType::Path,
+                "VECTOR" if has_icon_alias => WidgetType::Path,
+                "STAR" | "REGULAR_POLYGON" => {
+                    props.custom_type = Some(node.node_type.to_lowercase());
+                    WidgetType::GenericWidget
+                }
+                "BOOLEAN_OPERATION" => {
+                    props.custom_type = Some("boolean_operation".to_string());
+                    WidgetType::GenericWidget
+                }
+                _ => {
+                    if node.children.is_empty() {
+                        WidgetType::Rectangle
+                    } else {
+                        props.custom_type = Some(node.node_type.to_lowercase());
+                        WidgetType::GenericWidget
+                    }
+                }
             };
 
             return ClassificationResult {
@@ -112,7 +131,7 @@ impl HeuristicClassifier {
             });
 
             if let Some(text_child) = Self::find_first_text_child(node) {
-                props.text = text_child.characters.clone();
+                props.text = text_child.characters.clone().map(PropertyValue::Static);
                 if let Some(ref style) = text_child.style {
                     props.font_size = Some(style.font_size);
                     props.font_weight = Some(Self::map_font_weight(style.font_weight));
@@ -121,7 +140,7 @@ impl HeuristicClassifier {
                     props.text_color = Some(text_fill);
                 }
             } else {
-                props.text = Some(node.name.clone());
+                props.text = Some(PropertyValue::Static(node.name.clone()));
             }
 
             return ClassificationResult {
@@ -139,9 +158,9 @@ impl HeuristicClassifier {
             props.corner_radius = node.corner_radius;
 
             if let Some(text_child) = Self::find_first_text_child(node) {
-                props.placeholder = text_child.characters.clone();
+                props.placeholder = text_child.characters.clone().map(PropertyValue::Static);
             } else {
-                props.placeholder = Some("Enter value...".to_string());
+                props.placeholder = Some(PropertyValue::Static("Enter value...".to_string()));
             }
 
             return ClassificationResult {
@@ -242,7 +261,12 @@ impl HeuristicClassifier {
             };
         }
 
-        let container_type = if node.layout_mode.as_deref() == Some("HORIZONTAL") {
+        let is_wrap = node.layout_wrap.as_deref() == Some("WRAP");
+        let is_grid = is_wrap || name_lower.contains("grid") || node.layout_mode.as_deref() == Some("GRID");
+
+        let container_type = if is_grid {
+            WidgetType::Grid
+        } else if node.layout_mode.as_deref() == Some("HORIZONTAL") {
             WidgetType::HBox
         } else {
             WidgetType::VBox
@@ -254,6 +278,29 @@ impl HeuristicClassifier {
         props.border_width = node.stroke_weight;
         props.corner_radius = node.corner_radius;
         props.opacity = node.opacity;
+
+        // AutoLayout properties: spacing & padding
+        props.spacing = node.spacing.or(node.item_spacing);
+        props.padding = node.padding.or(node.padding_top).or(node.padding_left).or(node.padding_right).or(node.padding_bottom);
+
+        // Fill width / Fill height translation
+        let fill_w = node.fill_width.unwrap_or_else(|| {
+            node.layout_sizing_horizontal.as_deref() == Some("FILL")
+                || (node.layout_mode.as_deref() == Some("HORIZONTAL") && node.layout_grow == Some(1.0))
+                || (node.layout_mode.as_deref() == Some("VERTICAL") && node.layout_align.as_deref() == Some("STRETCH"))
+        });
+        if fill_w {
+            props.fill_width = Some(true);
+        }
+
+        let fill_h = node.fill_height.unwrap_or_else(|| {
+            node.layout_sizing_vertical.as_deref() == Some("FILL")
+                || (node.layout_mode.as_deref() == Some("VERTICAL") && node.layout_grow == Some(1.0))
+                || (node.layout_mode.as_deref() == Some("HORIZONTAL") && node.layout_align.as_deref() == Some("STRETCH"))
+        });
+        if fill_h {
+            props.fill_height = Some(true);
+        }
 
         ClassificationResult {
             widget_type: container_type,
@@ -508,11 +555,10 @@ impl HeuristicClassifier {
 
         if let Some(ref bbox) = node.absolute_bounding_box {
             let diff = (bbox.width - bbox.height).abs();
-            if diff <= 4.0 && (14.0..=30.0).contains(&bbox.width) {
-                if node.corner_radius.unwrap_or(0.0) <= 6.0 {
+            if diff <= 4.0 && (14.0..=30.0).contains(&bbox.width)
+                && node.corner_radius.unwrap_or(0.0) <= 6.0 {
                     return true;
                 }
-            }
         }
 
         false
@@ -525,11 +571,10 @@ impl HeuristicClassifier {
 
         if let Some(ref bbox) = node.absolute_bounding_box {
             let diff = (bbox.width - bbox.height).abs();
-            if diff <= 4.0 && (14.0..=30.0).contains(&bbox.width) {
-                if node.corner_radius.unwrap_or(0.0) >= 8.0 || node.node_type == "ELLIPSE" {
+            if diff <= 4.0 && (14.0..=30.0).contains(&bbox.width)
+                && (node.corner_radius.unwrap_or(0.0) >= 8.0 || node.node_type == "ELLIPSE") {
                     return true;
                 }
-            }
         }
 
         false
@@ -563,7 +608,7 @@ impl HeuristicClassifier {
         false
     }
 
-    fn find_first_text_child<'a>(node: &'a FigmaNode) -> Option<&'a FigmaNode> {
+    fn find_first_text_child(node: &FigmaNode) -> Option<&FigmaNode> {
         for child in &node.children {
             if child.node_type == "TEXT" {
                 return Some(child);

@@ -15,8 +15,17 @@ import {
     createDefaultStarterDocument,
     serializeRuxDocument,
 } from "@ruxel/shared-types";
-import { findNodePath, safeParseJson } from "../utils/treeTraversal";
-import { sharedCrdtBridge, sharedCrdtClient } from "./crdtStore";
+import { findNodePath, safeParseJson } from "../utils/treeTraversal.ts";
+import { CRDT_ORIGIN_INIT } from "../crdt/crdtBridge.ts";
+import { sharedCrdtBridge, sharedCrdtClient } from "./crdtStore.ts";
+import { useHistoryStore } from "./historyStore.ts";
+
+function extractNodeText(node: { id: string; properties?: { text?: unknown } }): string {
+    const t = node.properties?.text;
+    if (typeof t === "string") return t;
+    if (typeof t === "object" && t && "value" in t) return String((t as { value: unknown }).value);
+    return node.id;
+}
 
 export interface EditorState {
     readonly document: RuxDocument | null;
@@ -101,6 +110,10 @@ export interface EditorState {
     readonly isFrameworkSyncModalOpen: boolean;
     readonly isValidationDrawerOpen: boolean;
     readonly setFrameworkSyncStatus: (status: DaemonFrameworkSyncStatusResult) => void;
+    readonly resolvedAssets: Readonly<Record<string, { readonly webviewUri: string; readonly exists: boolean }>>;
+    readonly setResolvedAssets: (
+        assets: Record<string, { readonly webviewUri: string; readonly exists: boolean }>
+    ) => void;
     readonly setIsFrameworkSyncModalOpen: (isOpen: boolean) => void;
     readonly setIsValidationDrawerOpen: (isOpen: boolean) => void;
     readonly markClean: () => void;
@@ -142,6 +155,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     wasmError: null,
     isNativePreview: false,
     importedAssets: [],
+    resolvedAssets: {},
     frameworkSyncStatus: null,
     isFrameworkSyncModalOpen: false,
     isValidationDrawerOpen: false,
@@ -162,13 +176,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                       {
                           id: parsed.root.id,
                           widgetType: parsed.root.widget_type,
-                          name: parsed.root.properties?.text ?? parsed.root.id,
+                          name: extractNodeText(parsed.root),
                       },
                   ]
                 : [];
 
         if (parsed) {
-            sharedCrdtBridge.syncFromLocalDocument(parsed);
+            sharedCrdtBridge.syncFromLocalDocument(parsed, CRDT_ORIGIN_INIT);
+            useHistoryStore.getState().clear();
         }
 
         set({
@@ -192,13 +207,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                       {
                           id: parsed.root.id,
                           widgetType: parsed.root.widget_type,
-                          name: parsed.root.properties?.text ?? parsed.root.id,
+                          name: extractNodeText(parsed.root),
                       },
                   ]
                 : [];
 
         if (parsed) {
-            sharedCrdtBridge.syncFromLocalDocument(parsed);
+            sharedCrdtBridge.syncFromLocalDocument(parsed, CRDT_ORIGIN_INIT);
+            useHistoryStore.getState().clear();
         }
 
         set({
@@ -222,11 +238,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             {
                 id: doc.root.id,
                 widgetType: doc.root.widget_type,
-                name: doc.root.properties?.text ?? doc.root.id,
+                name: extractNodeText(doc.root),
             },
         ];
 
-        sharedCrdtBridge.syncFromLocalDocument(doc);
+        sharedCrdtBridge.syncFromLocalDocument(doc, CRDT_ORIGIN_INIT);
+        useHistoryStore.getState().clear();
 
         set({
             document: doc,
@@ -269,7 +286,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                           {
                               id: parsed.root.id,
                               widgetType: parsed.root.widget_type,
-                              name: parsed.root.properties?.text ?? parsed.root.id,
+                              name: extractNodeText(parsed.root),
                           },
                       ];
                 set({
@@ -379,7 +396,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     applyImportedFigmaDocument: (doc) => {
         const rawText = serializeRuxDocument(doc);
-        sharedCrdtBridge.syncFromLocalDocument(doc);
+        sharedCrdtBridge.syncFromLocalDocument(doc, CRDT_ORIGIN_INIT);
+        useHistoryStore.getState().clear();
         set({
             document: doc,
             rawText,
@@ -388,7 +406,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                 {
                     id: doc.root.id,
                     widgetType: doc.root.widget_type,
-                    name: doc.root.properties?.text ?? doc.root.id,
+                    name: extractNodeText(doc.root),
                 },
             ],
             isDirty: true,
@@ -409,6 +427,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     setFrameworkSyncStatus: (status) => set({ frameworkSyncStatus: status }),
     setIsFrameworkSyncModalOpen: (isOpen) => set({ isFrameworkSyncModalOpen: isOpen }),
     setIsValidationDrawerOpen: (isOpen) => set({ isValidationDrawerOpen: isOpen }),
+    setResolvedAssets: (assets) =>
+        set((state) => ({
+            resolvedAssets: {
+                ...state.resolvedAssets,
+                ...assets,
+            },
+        })),
 
     markClean: () => {
         set({ isDirty: false });
@@ -425,7 +450,7 @@ sharedCrdtBridge.setOnRemoteUpdate((remoteDoc) => {
                   {
                       id: remoteDoc.root.id,
                       widgetType: remoteDoc.root.widget_type,
-                      name: remoteDoc.root.properties?.text ?? remoteDoc.root.id,
+                      name: extractNodeText(remoteDoc.root),
                   },
               ];
     useEditorStore.setState({

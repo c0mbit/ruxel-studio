@@ -11,7 +11,7 @@ use crate::events::{generate_ui_message_tokens, BoundEvent};
 use crate::generator::CodegenDiagnostic;
 use crate::handler::generate_ui_handler_tokens;
 use crate::plugin::{
-    CodeGenerator, CodegenOptions, CodegenOutput, FrameworkProfile, TargetFramework,
+    CodeGenerator, CodegenOptions, CodegenOutput, FrameworkProfile, GeneratedFile, TargetFramework,
 };
 use crate::sanitizer::{make_ident, to_pascal_case, to_snake_case};
 use crate::state::{generate_app_state_tokens, InferredField};
@@ -110,12 +110,16 @@ impl IcedPlugin {
             WidgetType::Button => {
                 let btn_text_expr = if let Some(key) = &node.properties.text_key {
                     quote!(t!(#key))
+                } else if let Some(pv) = &node.properties.text {
+                    match pv {
+                        rux_ast::widget::PropertyValue::Binding(b) => {
+                            let b_tokens: TokenStream = syn::parse_str(b).unwrap_or_else(|_| quote!(#b));
+                            quote!(#b_tokens)
+                        }
+                        rux_ast::widget::PropertyValue::Static(s) => quote!(#s),
+                    }
                 } else {
-                    let txt = node
-                        .properties
-                        .text
-                        .as_deref()
-                        .unwrap_or_else(|| node.id.as_str());
+                    let txt = node.id.as_str();
                     quote!(#txt)
                 };
 
@@ -146,10 +150,31 @@ impl IcedPlugin {
                     }
                 };
 
-                if let Some(aria) = &node.properties.aria_label {
-                    quote!(#btn_core.explain(#aria))
+                let btn_styled = if let Some(ref style) = node.properties.style {
+                    let style_token: TokenStream = match style.to_lowercase().as_str() {
+                        "primary" => quote!(theme::Button::Primary),
+                        "secondary" => quote!(theme::Button::Secondary),
+                        "success" | "positive" => quote!(theme::Button::Success),
+                        "danger" | "destructive" => quote!(theme::Button::Destructive),
+                        "text" => quote!(theme::Button::Text),
+                        _ => {
+                            if style.contains("::") {
+                                syn::parse_str(style).unwrap_or_else(|_| quote!(theme::Button::Primary))
+                            } else {
+                                let id = make_ident(style);
+                                quote!(theme::Button::#id)
+                            }
+                        }
+                    };
+                    quote!(#btn_core.style(#style_token))
                 } else {
                     btn_core
+                };
+
+                if let Some(aria) = &node.properties.aria_label {
+                    quote!(#btn_styled.explain(#aria))
+                } else {
+                    btn_styled
                 }
             }
             WidgetType::Label => {
@@ -162,12 +187,22 @@ impl IcedPlugin {
                     quote! {
                         text(t!(#key))
                     }
+                } else if let Some(pv) = &node.properties.text {
+                    match pv {
+                        rux_ast::widget::PropertyValue::Binding(b) => {
+                            let b_tokens: TokenStream = syn::parse_str(b).unwrap_or_else(|_| quote!(#b));
+                            quote! {
+                                text(format!("{}", #b_tokens))
+                            }
+                        }
+                        rux_ast::widget::PropertyValue::Static(s) => {
+                            quote! {
+                                text(#s)
+                            }
+                        }
+                    }
                 } else {
-                    let lbl_text = node
-                        .properties
-                        .text
-                        .as_deref()
-                        .unwrap_or_else(|| node.id.as_str());
+                    let lbl_text = node.id.as_str();
                     quote! {
                         text(#lbl_text)
                     }
@@ -232,7 +267,7 @@ impl IcedPlugin {
                     .properties
                     .text
                     .as_deref()
-                    .unwrap_or_else(|| node.id.as_str());
+                    .unwrap_or(node.id.as_str());
 
                 let val_expr = if let Some(binding) = &node.bindings.value {
                     let field_ident = make_ident(&to_snake_case(binding));
@@ -262,7 +297,7 @@ impl IcedPlugin {
                     .properties
                     .text
                     .as_deref()
-                    .unwrap_or_else(|| node.id.as_str());
+                    .unwrap_or(node.id.as_str());
 
                 let field_ident = if let Some(binding) = &node.bindings.value {
                     make_ident(&to_snake_case(binding))
@@ -390,7 +425,7 @@ impl IcedPlugin {
                 }
             }
             WidgetType::TreeView => {
-                let header_text = node.properties.text.as_deref().unwrap_or_else(|| node.id.as_str());
+                let header_text = node.properties.text.as_deref().unwrap_or(node.id.as_str());
                 quote! {
                     column![
                         row![text("▼"), text(#header_text).size(13)].spacing(4.0),
@@ -411,6 +446,45 @@ impl IcedPlugin {
                             text("Camera FOV: 60° | Shading: PBR").size(10)
                         ].spacing(4.0)
                     ).width(Length::Fill).height(Length::Fixed(200.0)).center_x(Length::Fill).center_y(Length::Fill)
+                }
+            }
+            WidgetType::ConditionalNode => {
+                let cond_str = node.properties.condition.as_deref().unwrap_or("true");
+                let cond_tokens: TokenStream = syn::parse_str(cond_str).unwrap_or_else(|_| quote!(#cond_str));
+                quote! {
+                    container(
+                        if #cond_tokens {
+                            column![
+                                #(#child_exprs.into()),*
+                            ]
+                        } else {
+                            column![]
+                        }
+                    )
+                }
+            }
+            WidgetType::GenericWidget => {
+                let custom_str = node.properties.custom_type.as_deref().unwrap_or("UnknownWidget::build");
+                let custom_tokens: TokenStream = syn::parse_str(custom_str).unwrap_or_else(|_| quote!(#custom_str));
+                if let Some(ref raw_args) = node.properties.raw_args {
+                    let args_tokens: TokenStream = syn::parse_str(raw_args).unwrap_or_else(|_| quote!(#raw_args));
+                    quote! {
+                        #custom_tokens(#args_tokens)
+                    }
+                } else {
+                    quote! {
+                        #custom_tokens()
+                    }
+                }
+            }
+            WidgetType::CustomComponent => {
+                let comp_name = node.properties.custom_type.as_deref().unwrap_or("CustomComponent");
+                if let Some(ref raw_args) = node.properties.raw_args {
+                    let call_tokens: TokenStream = syn::parse_str(raw_args).unwrap_or_else(|_| quote!(#raw_args));
+                    quote! { #call_tokens }
+                } else {
+                    let comp_ident: TokenStream = syn::parse_str(comp_name).unwrap_or_else(|_| quote!(#comp_name));
+                    quote! { #comp_ident::view() }
                 }
             }
             _ => {
@@ -459,6 +533,12 @@ impl IcedPlugin {
     }
 }
 
+impl Default for IcedPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CodeGenerator for IcedPlugin {
     fn target_framework(&self) -> TargetFramework {
         TargetFramework::Iced
@@ -494,7 +574,7 @@ impl CodeGenerator for IcedPlugin {
         let view_tokens = quote! {
             pub fn view<'a>(state: &'a AppState) -> iced::Element<'a, UiMessage> {
                 use iced::widget::{button, checkbox, column, container, pick_list, progress_bar, radio, row, scrollable, slider, text, text_input};
-                use iced::{Alignment, Length};
+                use iced::{theme, Alignment, Length};
 
                 #root_expr.into()
             }
@@ -512,7 +592,22 @@ impl CodeGenerator for IcedPlugin {
 
         let syntax_file: File = syn::parse2(file_tokens)
             .map_err(|e| CodegenError::SynParseError(format!("{}", e)))?;
-        let ui_generated_code = prettyplease::unparse(&syntax_file);
+        let mut ui_generated_code = if let Some(ref existing) = _options.existing_ui_code {
+            if !existing.trim().is_empty() {
+                match crate::patcher::AstPatcher::patch_ui_source(existing, doc, TargetFramework::Iced) {
+                    Ok(patched) => patched,
+                    Err(_) => prettyplease::unparse(&syntax_file),
+                }
+            } else {
+                prettyplease::unparse(&syntax_file)
+            }
+        } else {
+            prettyplease::unparse(&syntax_file)
+        };
+
+        if !doc.components.is_empty() && !ui_generated_code.contains("pub mod components;") {
+            ui_generated_code = format!("pub mod components;\npub use components::*;\n\n{}", ui_generated_code);
+        }
 
         let mut diagnostics = Vec::new();
         let controller_code = match existing_controller {
@@ -551,6 +646,30 @@ impl CodeGenerator for IcedPlugin {
             TargetFramework::Iced,
         );
         auxiliary_files.push(router_file);
+
+        if !doc.components.is_empty() {
+            let mut mod_exports = String::new();
+            for (comp_name, comp_def) in &doc.components {
+                let snake = crate::sanitizer::to_snake_case(comp_name);
+                let comp_tokens = self.generate_widget_expr(&comp_def.root, events);
+                let comp_code = format!(
+                    "//! Component {}\nuse iced::widget::*;\nuse iced::Element;\n\npub struct {};\n\nimpl {} {{\n    pub fn view<'a>() -> Element<'a, ()> {{\n        ({}).into()\n    }}\n}}\n",
+                    comp_name, comp_name, comp_name, comp_tokens
+                );
+                let filename = comp_def.file_path.clone().unwrap_or_else(|| format!("src/components/{}.rs", snake));
+                auxiliary_files.push(GeneratedFile {
+                    filename,
+                    content: comp_code,
+                    file_type: "component".to_string(),
+                });
+                mod_exports.push_str(&format!("pub mod {};\npub use {}::*;\n", snake, snake));
+            }
+            auxiliary_files.push(GeneratedFile {
+                filename: "src/components/mod.rs".to_string(),
+                content: mod_exports,
+                file_type: "component_module".to_string(),
+            });
+        }
 
         Ok(CodegenOutput {
             ui_generated_filename: "ui_generated.rs".to_string(),

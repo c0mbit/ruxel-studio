@@ -35,6 +35,22 @@ impl GeometryResolver {
 
     pub fn resolve_container_layout(&self, figma_node: &FigmaNode) -> Option<ContainerLayout> {
         let mode = figma_node.layout_mode.as_deref().unwrap_or("NONE");
+        let is_wrap = figma_node.layout_wrap.as_deref() == Some("WRAP");
+        let name_lower = figma_node.name.to_lowercase();
+        let is_grid = is_wrap || name_lower.contains("grid") || mode == "GRID";
+
+        if is_grid {
+            let col_gap = figma_node.item_spacing.or(figma_node.spacing).unwrap_or(0.0).max(0.0);
+            let row_gap = figma_node.counter_axis_spacing.unwrap_or(col_gap).max(0.0);
+            return Some(ContainerLayout::Grid(rux_ast::layout::GridContainer {
+                columns: vec![rux_ast::layout::GridTrack::Fr(1.0), rux_ast::layout::GridTrack::Fr(1.0)],
+                rows: vec![rux_ast::layout::GridTrack::Auto],
+                column_gap: col_gap,
+                row_gap,
+                justify_items: None,
+                align_items: None,
+            }));
+        }
 
         match mode {
             "HORIZONTAL" => {
@@ -44,7 +60,7 @@ impl GeometryResolver {
                 let align_items = self.map_counter_align(
                     figma_node.counter_axis_align_items.as_deref().unwrap_or("MIN"),
                 );
-                let gap = figma_node.item_spacing.unwrap_or(0.0).max(0.0);
+                let gap = figma_node.item_spacing.or(figma_node.spacing).unwrap_or(0.0).max(0.0);
 
                 Some(ContainerLayout::Flex(FlexContainer {
                     direction: FlexDirection::Row,
@@ -61,7 +77,7 @@ impl GeometryResolver {
                 let align_items = self.map_counter_align(
                     figma_node.counter_axis_align_items.as_deref().unwrap_or("MIN"),
                 );
-                let gap = figma_node.item_spacing.unwrap_or(0.0).max(0.0);
+                let gap = figma_node.item_spacing.or(figma_node.spacing).unwrap_or(0.0).max(0.0);
 
                 Some(ContainerLayout::Flex(FlexContainer {
                     direction: FlexDirection::Column,
@@ -113,19 +129,37 @@ impl GeometryResolver {
             }
         }
 
-        if figma_node.layout_grow == Some(1.0) {
+        if figma_node.layout_grow == Some(1.0)
+            || figma_node.fill_width == Some(true)
+            || figma_node.layout_sizing_horizontal.as_deref() == Some("FILL")
+            || (figma_node.layout_mode.as_deref() == Some("HORIZONTAL") && figma_node.layout_grow == Some(1.0))
+            || (figma_node.layout_mode.as_deref() == Some("VERTICAL") && figma_node.layout_align.as_deref() == Some("STRETCH"))
+        {
             dimensions.width = Size::Fill(1.0);
+        }
+
+        if figma_node.fill_height == Some(true)
+            || figma_node.layout_sizing_vertical.as_deref() == Some("FILL")
+            || (figma_node.layout_mode.as_deref() == Some("VERTICAL") && figma_node.layout_grow == Some(1.0))
+            || (figma_node.layout_mode.as_deref() == Some("HORIZONTAL") && figma_node.layout_align.as_deref() == Some("STRETCH"))
+        {
+            dimensions.height = Size::Fill(1.0);
         }
 
         dimensions
     }
 
     pub fn resolve_spacing(&self, figma_node: &FigmaNode) -> Spacing {
+        let pad_top = figma_node.padding_top.or(figma_node.padding).unwrap_or(0.0).max(0.0);
+        let pad_right = figma_node.padding_right.or(figma_node.padding).unwrap_or(0.0).max(0.0);
+        let pad_bottom = figma_node.padding_bottom.or(figma_node.padding).unwrap_or(0.0).max(0.0);
+        let pad_left = figma_node.padding_left.or(figma_node.padding).unwrap_or(0.0).max(0.0);
+
         let padding = RectOffsets {
-            top: figma_node.padding_top.unwrap_or(0.0).max(0.0),
-            right: figma_node.padding_right.unwrap_or(0.0).max(0.0),
-            bottom: figma_node.padding_bottom.unwrap_or(0.0).max(0.0),
-            left: figma_node.padding_left.unwrap_or(0.0).max(0.0),
+            top: pad_top,
+            right: pad_right,
+            bottom: pad_bottom,
+            left: pad_left,
         };
 
         Spacing {
@@ -440,5 +474,11 @@ impl GeometryResolver {
             "BASELINE" => AlignItems::Baseline,
             _ => AlignItems::FlexStart,
         }
+    }
+}
+
+impl Default for GeometryResolver {
+    fn default() -> Self {
+        Self::new()
     }
 }

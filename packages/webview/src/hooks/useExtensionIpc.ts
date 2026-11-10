@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from "react";
+import * as Y from "yjs";
 import {
     type ExtensionToWebviewMessage,
     type TargetFramework,
@@ -7,6 +8,8 @@ import {
     type WebviewToExtensionMessage,
     serializeRuxDocument,
 } from "@ruxel/shared-types";
+import { CRDT_ORIGIN_REMOTE } from "../crdt/crdtBridge";
+import { sharedCrdtBridge } from "../state/crdtStore";
 import { useEditorStore } from "../state/editorStore";
 import { useHistoryStore } from "../state/historyStore";
 import { vscodeApi } from "../vscode";
@@ -21,141 +24,145 @@ function cleanPayloadText(rawText: string): string {
     return rawText;
 }
 
+let listenerRefCount = 0;
+let activeMessageListener: ((event: MessageEvent<ExtensionToWebviewMessage>) => void) | null = null;
+
+function dispatchIncomingExtensionMessage(event: MessageEvent<ExtensionToWebviewMessage>) {
+    const message = event.data;
+    if (!message || typeof message !== "object") {
+        return;
+    }
+
+    switch (message.type) {
+        case "DOCUMENT_INIT":
+            useHistoryStore.getState().clear();
+            useEditorStore.getState().setInitialDocument(
+                message.rawText,
+                message.document,
+                message.isDirty,
+                message.isReadOnly
+            );
+            break;
+        case "DOCUMENT_UPDATE":
+            useHistoryStore.getState().clear();
+            useEditorStore.getState().updateDocumentFromExternal(
+                message.rawText,
+                message.document
+            );
+            break;
+        case "VALIDATION_RESULT":
+            useEditorStore.getState().setValidationResult(message.result);
+            break;
+        case "DAEMON_STATUS":
+            useEditorStore.getState().setDaemonStatus(message.status);
+            break;
+        case "SELECT_NODE_EXTERNAL":
+            useEditorStore.getState().setSelectedNodeId(message.nodeId);
+            break;
+        case "GENERATE_CODE_RESULT":
+            useEditorStore.getState().setCodegenResult(message.result);
+            break;
+        case "EXPORT_CODE_RESULT":
+            useEditorStore.getState().setExportResult(message.result);
+            break;
+        case "AST_UPDATED_FROM_CODE":
+            useEditorStore.getState().reconcileAstFromCode(message.document, message.rawText);
+            break;
+        case "FIGMA_IMPORT_PROGRESS":
+            useEditorStore.getState().setFigmaImportProgress({
+                step: message.step,
+                progress: message.progress,
+            });
+            break;
+        case "FIGMA_IMPORT_RESULT":
+            useEditorStore.getState().setIsImportingFigma(false);
+            if (message.success && message.result) {
+                useEditorStore.getState().applyImportedFigmaDocument(message.result.document);
+            } else {
+                useEditorStore.getState().setFigmaImportProgress(null);
+            }
+            break;
+        case "WASM_PREVIEW_RESULT":
+            useEditorStore.getState().setIsCompilingWasm(false);
+            if (message.success && message.previewUrl) {
+                useEditorStore.getState().setWasmPreviewUrl(message.previewUrl);
+                useEditorStore.getState().setWasmError(null);
+            } else if (message.error) {
+                useEditorStore.getState().setWasmError(message.error);
+            }
+            break;
+        case "IMPORT_ASSET_RESULT":
+            if (message.success && message.result) {
+                useEditorStore.getState().addImportedAsset({
+                    alias: message.result.alias,
+                    relativePath: message.result.relative_path,
+                    fullPath: message.result.full_path,
+                    assetType: message.result.asset_type,
+                });
+            }
+            break;
+        case "FRAMEWORK_SYNC_STATUS_RESULT":
+            useEditorStore.getState().setFrameworkSyncStatus(message.result);
+            break;
+        case "ASSET_MAP_UPDATE":
+            useEditorStore.getState().setResolvedAssets(message.assets);
+            break;
+        case "CRDT_DELTA_UPDATE": {
+            try {
+                const binaryStr = window.atob(message.deltaBase64);
+                const bytes = new Uint8Array(binaryStr.length);
+                for (let i = 0; i < binaryStr.length; i++) {
+                    bytes[i] = binaryStr.charCodeAt(i);
+                }
+                Y.applyUpdate(sharedCrdtBridge.getYDoc(), bytes, CRDT_ORIGIN_REMOTE);
+            } catch (err) {
+                console.error("Failed to apply CRDT delta from extension:", err);
+            }
+            break;
+        }
+        case "CRDT_SYNC_RESPONSE": {
+            if (message.deltaBase64) {
+                try {
+                    const binaryStr = window.atob(message.deltaBase64);
+                    const bytes = new Uint8Array(binaryStr.length);
+                    for (let i = 0; i < binaryStr.length; i++) {
+                        bytes[i] = binaryStr.charCodeAt(i);
+                    }
+                    Y.applyUpdate(sharedCrdtBridge.getYDoc(), bytes, CRDT_ORIGIN_REMOTE);
+                } catch (err) {
+                    console.error("Failed to apply CRDT sync response in webview:", err);
+                }
+            }
+            break;
+        }
+        case "ERROR":
+            useEditorStore.getState().setIsGeneratingCode(false);
+            useEditorStore.getState().setIsImportingFigma(false);
+            useEditorStore.getState().setFigmaImportProgress(null);
+            break;
+    }
+}
+
 export function useExtensionIpc() {
-    const setInitialDocument = useEditorStore((state) => state.setInitialDocument);
-    const updateDocumentFromExternal = useEditorStore(
-        (state) => state.updateDocumentFromExternal
-    );
-    const reconcileAstFromCode = useEditorStore(
-        (state) => state.reconcileAstFromCode
-    );
-    const setValidationResult = useEditorStore(
-        (state) => state.setValidationResult
-    );
-    const setDaemonStatus = useEditorStore((state) => state.setDaemonStatus);
-    const setSelectedNodeId = useEditorStore((state) => state.setSelectedNodeId);
-    const setCodegenResult = useEditorStore((state) => state.setCodegenResult);
-    const setExportResult = useEditorStore((state) => state.setExportResult);
-    const setIsGeneratingCode = useEditorStore((state) => state.setIsGeneratingCode);
-    const setFigmaImportProgress = useEditorStore((state) => state.setFigmaImportProgress);
-    const setIsImportingFigma = useEditorStore((state) => state.setIsImportingFigma);
-    const applyImportedFigmaDocument = useEditorStore((state) => state.applyImportedFigmaDocument);
-    const setWasmPreviewUrl = useEditorStore((state) => state.setWasmPreviewUrl);
-    const setIsCompilingWasm = useEditorStore((state) => state.setIsCompilingWasm);
-    const setWasmError = useEditorStore((state) => state.setWasmError);
-    const addImportedAsset = useEditorStore((state) => state.addImportedAsset);
-    const setFrameworkSyncStatus = useEditorStore((state) => state.setFrameworkSyncStatus);
-
     useEffect(() => {
-        const handleMessage = (event: MessageEvent<ExtensionToWebviewMessage>) => {
-            const message = event.data;
-            if (!message || typeof message !== "object") {
-                return;
-            }
-
-            switch (message.type) {
-                case "DOCUMENT_INIT":
-                    useHistoryStore.getState().clear();
-                    setInitialDocument(
-                        message.rawText,
-                        message.document,
-                        message.isDirty,
-                        message.isReadOnly
-                    );
-                    break;
-                case "DOCUMENT_UPDATE":
-                    useHistoryStore.getState().clear();
-                    updateDocumentFromExternal(
-                        message.rawText,
-                        message.document
-                    );
-                    break;
-                case "VALIDATION_RESULT":
-                    setValidationResult(message.result);
-                    break;
-                case "DAEMON_STATUS":
-                    setDaemonStatus(message.status);
-                    break;
-                case "SELECT_NODE_EXTERNAL":
-                    setSelectedNodeId(message.nodeId);
-                    break;
-                case "GENERATE_CODE_RESULT":
-                    setCodegenResult(message.result);
-                    break;
-                case "EXPORT_CODE_RESULT":
-                    setExportResult(message.result);
-                    break;
-                case "AST_UPDATED_FROM_CODE":
-                    reconcileAstFromCode(message.document, message.rawText);
-                    break;
-                case "FIGMA_IMPORT_PROGRESS":
-                    setFigmaImportProgress({
-                        step: message.step,
-                        progress: message.progress,
-                    });
-                    break;
-                case "FIGMA_IMPORT_RESULT":
-                    setIsImportingFigma(false);
-                    if (message.success && message.result) {
-                        applyImportedFigmaDocument(message.result.document);
-                    } else {
-                        setFigmaImportProgress(null);
-                    }
-                    break;
-                case "WASM_PREVIEW_RESULT":
-                    setIsCompilingWasm(false);
-                    if (message.success && message.previewUrl) {
-                        setWasmPreviewUrl(message.previewUrl);
-                        setWasmError(null);
-                    } else if (message.error) {
-                        setWasmError(message.error);
-                    }
-                    break;
-                case "IMPORT_ASSET_RESULT":
-                    if (message.success && message.result) {
-                        addImportedAsset({
-                            alias: message.result.alias,
-                            relativePath: message.result.relative_path,
-                            fullPath: message.result.full_path,
-                            assetType: message.result.asset_type,
-                        });
-                    }
-                    break;
-                case "FRAMEWORK_SYNC_STATUS_RESULT":
-                    setFrameworkSyncStatus(message.result);
-                    break;
-                case "ERROR":
-                    setIsGeneratingCode(false);
-                    setIsImportingFigma(false);
-                    setFigmaImportProgress(null);
-                    break;
-            }
-        };
-
-        window.addEventListener("message", handleMessage);
-        vscodeApi.postMessage({ type: "READY" });
+        if (listenerRefCount === 0) {
+            activeMessageListener = dispatchIncomingExtensionMessage;
+            window.addEventListener("message", activeMessageListener);
+            vscodeApi.postMessage({ type: "READY" });
+        }
+        listenerRefCount++;
 
         return () => {
-            window.removeEventListener("message", handleMessage);
+            listenerRefCount--;
+            if (listenerRefCount <= 0) {
+                listenerRefCount = 0;
+                if (activeMessageListener) {
+                    window.removeEventListener("message", activeMessageListener);
+                    activeMessageListener = null;
+                }
+            }
         };
-    }, [
-        setInitialDocument,
-        updateDocumentFromExternal,
-        reconcileAstFromCode,
-        setValidationResult,
-        setDaemonStatus,
-        setSelectedNodeId,
-        setCodegenResult,
-        setExportResult,
-        setIsGeneratingCode,
-        setFigmaImportProgress,
-        setIsImportingFigma,
-        applyImportedFigmaDocument,
-        setWasmPreviewUrl,
-        setIsCompilingWasm,
-        setWasmError,
-        addImportedAsset,
-    ]);
+    }, []);
 
     const postMessage = useCallback((message: WebviewToExtensionMessage) => {
         vscodeApi.postMessage(message);
@@ -217,7 +224,7 @@ export function useExtensionIpc() {
             targetLanguage?: TargetLanguage,
             targetFramework?: TargetFramework
         ) => {
-            setIsGeneratingCode(true);
+            useEditorStore.getState().setIsGeneratingCode(true);
             postMessage({
                 type: "GENERATE_CODE_REQUEST",
                 rawText: cleanPayloadText(rawText),
@@ -226,7 +233,7 @@ export function useExtensionIpc() {
                 targetFramework,
             });
         },
-        [postMessage, setIsGeneratingCode]
+        [postMessage]
     );
 
     const sendExportCode = useCallback(
@@ -258,10 +265,10 @@ export function useExtensionIpc() {
     );
 
     const sendImportFigma = useCallback(
-        (figmaToken: string, fileKeyOrUrl: string, nodeId?: string) => {
-            setIsImportingFigma(true);
-            setFigmaImportProgress({
-                step: "Connecting to Figma REST API...",
+        (figmaToken?: string, fileKeyOrUrl?: string, nodeId?: string, figmaJson?: string) => {
+            useEditorStore.getState().setIsImportingFigma(true);
+            useEditorStore.getState().setFigmaImportProgress({
+                step: figmaJson ? "Ingesting Figma Plugin JSON..." : "Connecting to Figma REST API...",
                 progress: 10,
             });
             postMessage({
@@ -269,22 +276,23 @@ export function useExtensionIpc() {
                 figmaToken,
                 fileKeyOrUrl,
                 nodeId,
+                figmaJson,
             });
         },
-        [postMessage, setIsImportingFigma, setFigmaImportProgress]
+        [postMessage]
     );
 
     const sendCompileWasm = useCallback(
         (rawText: string, targetFramework?: TargetFramework) => {
-            setIsCompilingWasm(true);
-            setWasmError(null);
+            useEditorStore.getState().setIsCompilingWasm(true);
+            useEditorStore.getState().setWasmError(null);
             postMessage({
                 type: "COMPILE_WASM_REQUEST",
                 rawText: cleanPayloadText(rawText),
                 targetFramework,
             });
         },
-        [postMessage, setIsCompilingWasm, setWasmError]
+        [postMessage]
     );
 
     const sendGetWasmStatus = useCallback(() => {
@@ -317,8 +325,32 @@ export function useExtensionIpc() {
         });
     }, [postMessage]);
 
+    const sendCrdtDelta = useCallback(
+        (deltaBase64: string, stateVectorBase64?: string, summary?: string) => {
+            postMessage({
+                type: "CRDT_DELTA_CHANGE",
+                deltaBase64,
+                stateVectorBase64,
+                summary,
+            });
+        },
+        [postMessage]
+    );
+
+    const sendCrdtSyncRequest = useCallback(
+        (stateVectorBase64?: string) => {
+            postMessage({
+                type: "CRDT_SYNC_REQUEST",
+                stateVectorBase64,
+            });
+        },
+        [postMessage]
+    );
+
     return {
         sendDocumentChange,
+        sendCrdtDelta,
+        sendCrdtSyncRequest,
         sendSelectNode,
         sendValidateRequest,
         sendSwitchViewMode,

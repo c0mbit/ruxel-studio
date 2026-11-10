@@ -110,6 +110,14 @@ export interface DaemonFrameworkSyncStatusResult {
     readonly recent_reports: readonly AutopatchReport[];
 }
 
+export interface ResolvedAssetItem {
+    readonly originalPath: string;
+    readonly webviewUri: string;
+    readonly exists: boolean;
+}
+
+export type ResolvedAssetMap = Readonly<Record<string, ResolvedAssetItem>>;
+
 export type ExtensionToWebviewMessage =
     | {
           readonly type: "DOCUMENT_INIT";
@@ -195,14 +203,33 @@ export type ExtensionToWebviewMessage =
           readonly success: boolean;
       }
     | {
+          readonly type: "CRDT_DELTA_UPDATE";
+          readonly deltaBase64: string;
+          readonly stateVectorBase64?: string;
+          readonly revision?: number;
+      }
+    | {
+          readonly type: "CRDT_SYNC_RESPONSE";
+          readonly deltaBase64?: string;
+          readonly stateVectorBase64: string;
+      }
+    | {
           readonly type: "ERROR";
           readonly code: string;
           readonly message: string;
+      }
+    | {
+          readonly type: "ASSET_MAP_UPDATE";
+          readonly assets: Record<string, ResolvedAssetItem>;
       };
 
 export type WebviewToExtensionMessage =
     | {
           readonly type: "READY";
+      }
+    | {
+          readonly type: "RESOLVE_ASSETS_REQUEST";
+          readonly paths: readonly string[];
       }
     | {
           readonly type: "GET_FRAMEWORK_SYNC_STATUS_REQUEST";
@@ -211,6 +238,16 @@ export type WebviewToExtensionMessage =
           readonly type: "DOCUMENT_CHANGE";
           readonly rawText: string;
           readonly summary?: string;
+      }
+    | {
+          readonly type: "CRDT_DELTA_CHANGE";
+          readonly deltaBase64: string;
+          readonly stateVectorBase64?: string;
+          readonly summary?: string;
+      }
+    | {
+          readonly type: "CRDT_SYNC_REQUEST";
+          readonly stateVectorBase64?: string;
       }
     | {
           readonly type: "NODE_PATCH";
@@ -248,9 +285,10 @@ export type WebviewToExtensionMessage =
       }
     | {
           readonly type: "FIGMA_IMPORT_REQUEST";
-          readonly figmaToken: string;
-          readonly fileKeyOrUrl: string;
+          readonly figmaToken?: string;
+          readonly fileKeyOrUrl?: string;
           readonly nodeId?: string;
+          readonly figmaJson?: string;
       }
     | {
           readonly type: "COMPILE_WASM_REQUEST";
@@ -361,10 +399,11 @@ export interface DaemonReverseParseResult {
 }
 
 export interface DaemonImportFigmaParams {
-    readonly figma_token: string;
-    readonly file_key: string;
+    readonly figma_token?: string;
+    readonly file_key?: string;
     readonly node_id?: string;
     readonly project_dir?: string;
+    readonly figma_json?: string;
 }
 
 export interface DaemonImportFigmaResult {
@@ -415,3 +454,39 @@ export interface DaemonImportAssetResult {
     readonly asset_type: string;
     readonly alias: string;
 }
+
+export interface DaemonPatchMultiFileParams {
+    readonly base_dir: string;
+    readonly rux_path: string;
+    readonly target_framework?: TargetFramework;
+    readonly patches: readonly PropertyPatch[];
+}
+
+export interface DaemonPatchMultiFileResult {
+    readonly success: boolean;
+    readonly patched_files: readonly string[];
+    readonly updated_document?: RuxDocument;
+    readonly errors: readonly string[];
+}
+
+export interface DaemonCrdtSyncParams {
+    readonly rux_path: string;
+    readonly state_vector_base64?: string;
+}
+
+export interface DaemonCrdtSyncResult {
+    readonly delta_base64?: string;
+    readonly state_vector_base64: string;
+}
+
+export interface DaemonCrdtApplyDeltaParams {
+    readonly rux_path: string;
+    readonly delta_base64: string;
+}
+
+export interface DaemonCrdtApplyDeltaResult {
+    readonly success: boolean;
+    readonly state_vector_base64: string;
+    readonly updated_ast?: RuxDocument;
+}
+

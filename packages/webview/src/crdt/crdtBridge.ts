@@ -16,60 +16,94 @@ import type {
 
 export const CRDT_ORIGIN_LOCAL = "zustand-local";
 export const CRDT_ORIGIN_REMOTE = "crdt-remote";
+export const CRDT_ORIGIN_INIT = "crdt-init";
 
-export function widgetNodeToYMap(node: WidgetNode): Y.Map<unknown> {
-    const map = new Y.Map<unknown>();
-    map.set("id", node.id);
-    map.set("widget_type", node.widget_type);
+export function uint8ArrayToBase64(bytes: Uint8Array): string {
+    let binary = "";
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return typeof window !== "undefined" && window.btoa
+        ? window.btoa(binary)
+        : Buffer.from(bytes).toString("base64");
+}
+
+export function base64ToUint8Array(base64: string): Uint8Array {
+    const binary = typeof window !== "undefined" && window.atob
+        ? window.atob(base64)
+        : Buffer.from(base64, "base64").toString("binary");
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+}
+
+export function populateWidgetNodeToYMap(
+    node: WidgetNode,
+    targetMap: Y.Map<unknown>
+): void {
+    targetMap.set("id", node.id);
+    targetMap.set("widget_type", node.widget_type);
     if (node.slot) {
-        map.set("slot", node.slot);
+        targetMap.set("slot", node.slot);
+    } else {
+        targetMap.delete("slot");
     }
 
     const propMap = new Y.Map<unknown>();
+    targetMap.set("properties", propMap);
     if (node.properties) {
         for (const [key, value] of Object.entries(node.properties)) {
             propMap.set(key, value);
         }
     }
-    map.set("properties", propMap);
 
     const layoutMap = new Y.Map<unknown>();
+    targetMap.set("layout", layoutMap);
     if (node.layout) {
         for (const [key, value] of Object.entries(node.layout)) {
             layoutMap.set(key, value);
         }
     }
-    map.set("layout", layoutMap);
 
     const eventMap = new Y.Map<unknown>();
+    targetMap.set("events", eventMap);
     if (node.events) {
         for (const [key, value] of Object.entries(node.events)) {
             eventMap.set(key, value);
         }
     }
-    map.set("events", eventMap);
 
     const bindingsMap = new Y.Map<unknown>();
+    targetMap.set("bindings", bindingsMap);
     if (node.bindings) {
         for (const [key, value] of Object.entries(node.bindings)) {
             bindingsMap.set(key, value);
         }
     }
-    map.set("bindings", bindingsMap);
 
     const animArray = new Y.Array<unknown>();
+    targetMap.set("animations", animArray);
     if (node.animations && node.animations.length > 0) {
         animArray.push([...node.animations]);
     }
-    map.set("animations", animArray);
 
     const childrenArray = new Y.Array<Y.Map<unknown>>();
+    targetMap.set("children", childrenArray);
     if (node.children && node.children.length > 0) {
-        const childMaps = node.children.map((child) => widgetNodeToYMap(child));
-        childrenArray.push(childMaps);
+        for (const child of node.children) {
+            const childMap = new Y.Map<unknown>();
+            childrenArray.push([childMap]);
+            populateWidgetNodeToYMap(child, childMap);
+        }
     }
-    map.set("children", childrenArray);
+}
 
+export function widgetNodeToYMap(node: WidgetNode): Y.Map<unknown> {
+    const map = new Y.Map<unknown>();
+    populateWidgetNodeToYMap(node, map);
     return map;
 }
 
@@ -137,6 +171,63 @@ export function yMapToWidgetNode(map: Y.Map<unknown>): WidgetNode {
         ...(animations && animations.length > 0 ? { animations } : {}),
         ...(children.length > 0 ? { children } : {}),
     };
+}
+
+export function reconcileChildrenArray(
+    incomingChildren: readonly WidgetNode[],
+    childArray: Y.Array<Y.Map<unknown>>
+): void {
+    const existing: { id: string; map: Y.Map<unknown> }[] = [];
+    for (let i = 0; i < childArray.length; i++) {
+        const item = childArray.get(i);
+        if (item instanceof Y.Map) {
+            existing.push({ id: item.get("id") as string, map: item });
+        }
+    }
+    const incomingIds = new Set(incomingChildren.map((c) => c.id));
+
+    // 1. Remove deleted items in reverse order to maintain index stability
+    for (let i = existing.length - 1; i >= 0; i--) {
+        if (!incomingIds.has(existing[i].id)) {
+            childArray.delete(i, 1);
+        }
+    }
+
+    // 2. Align childArray to incomingChildren sequence
+    for (let i = 0; i < incomingChildren.length; i++) {
+        const inc = incomingChildren[i];
+        const currentItem = i < childArray.length ? childArray.get(i) : null;
+        const currentId = currentItem instanceof Y.Map ? currentItem.get("id") : null;
+
+        if (currentId === inc.id) {
+            reconcileWidgetNodeToYMap(inc, currentItem as Y.Map<unknown>);
+        } else {
+            // Check if inc.id exists further down
+            let foundIdx = -1;
+            for (let j = i + 1; j < childArray.length; j++) {
+                const cand = childArray.get(j);
+                if (cand instanceof Y.Map && cand.get("id") === inc.id) {
+                    foundIdx = j;
+                    break;
+                }
+            }
+            if (foundIdx !== -1) {
+                childArray.delete(foundIdx, 1);
+                const newMap = new Y.Map<unknown>();
+                populateWidgetNodeToYMap(inc, newMap);
+                childArray.insert(i, [newMap]);
+            } else {
+                const newMap = new Y.Map<unknown>();
+                populateWidgetNodeToYMap(inc, newMap);
+                childArray.insert(i, [newMap]);
+            }
+        }
+    }
+
+    // 3. Trim any trailing excess
+    if (childArray.length > incomingChildren.length) {
+        childArray.delete(incomingChildren.length, childArray.length - incomingChildren.length);
+    }
 }
 
 export function reconcileWidgetNodeToYMap(
@@ -253,47 +344,69 @@ export function reconcileWidgetNodeToYMap(
     }
 
     const incomingChildren = node.children ?? [];
-    const currentLength = childArray.length;
+    reconcileChildrenArray(incomingChildren, childArray);
+}
 
-    let canReconcileInPlace = true;
-    if (currentLength === incomingChildren.length) {
-        for (let i = 0; i < currentLength; i++) {
-            const existingChild = childArray.get(i);
-            if (!(existingChild instanceof Y.Map) || existingChild.get("id") !== incomingChildren[i].id) {
-                canReconcileInPlace = false;
-                break;
-            }
-        }
-    } else {
-        canReconcileInPlace = false;
-    }
-
-    if (canReconcileInPlace) {
-        for (let i = 0; i < currentLength; i++) {
-            const existingChild = childArray.get(i);
-            reconcileWidgetNodeToYMap(incomingChildren[i], existingChild);
-        }
-    } else {
-        childArray.delete(0, currentLength);
-        if (incomingChildren.length > 0) {
-            const mapped = incomingChildren.map((c) => widgetNodeToYMap(c));
-            childArray.push(mapped);
-        }
-    }
+export interface CrdtBridgeOptions {
+    readonly ydoc?: Y.Doc;
+    readonly trackedOrigins?: Set<unknown>;
+    readonly captureTimeout?: number;
 }
 
 export class CrdtDocumentBridge {
     private readonly ydoc: Y.Doc;
+    private readonly undoManager: Y.UndoManager;
     private onRemoteUpdateCallback: ((doc: RuxDocument) => void) | null = null;
     private isApplyingLocal = false;
+    private readonly localDeltaListeners = new Set<(delta: Uint8Array, stateVector: Uint8Array) => void>();
 
-    constructor(ydoc?: Y.Doc) {
-        this.ydoc = ydoc ?? new Y.Doc();
+    constructor(ydocOrOptions?: Y.Doc | CrdtBridgeOptions) {
+        let doc: Y.Doc;
+        let trackedOrigins: Set<unknown> | undefined;
+        let captureTimeout = 300;
+
+        if (ydocOrOptions instanceof Y.Doc) {
+            doc = ydocOrOptions;
+        } else if (ydocOrOptions && typeof ydocOrOptions === "object") {
+            doc = ydocOrOptions.ydoc ?? new Y.Doc();
+            trackedOrigins = ydocOrOptions.trackedOrigins;
+            if (ydocOrOptions.captureTimeout !== undefined) {
+                captureTimeout = ydocOrOptions.captureTimeout;
+            }
+        } else {
+            doc = new Y.Doc();
+        }
+
+        this.ydoc = doc;
+
+        const rootMap = this.ydoc.getMap<unknown>("root");
+        const compMap = this.ydoc.getMap<unknown>("components");
+        const themeMap = this.ydoc.getMap<unknown>("theme");
+        const metaMap = this.ydoc.getMap<unknown>("meta");
+
+        this.undoManager = new Y.UndoManager([rootMap, compMap, themeMap, metaMap], {
+            trackedOrigins: trackedOrigins ?? new Set([CRDT_ORIGIN_LOCAL]),
+            captureTimeout,
+        });
+
         this.ydoc.on("afterTransaction", (transaction) => {
-            if (transaction.origin !== CRDT_ORIGIN_LOCAL && !this.isApplyingLocal) {
+            if (
+                transaction.origin !== CRDT_ORIGIN_LOCAL &&
+                transaction.origin !== CRDT_ORIGIN_INIT &&
+                !this.isApplyingLocal
+            ) {
                 const updatedDoc = this.toRuxDocument();
                 if (updatedDoc && this.onRemoteUpdateCallback) {
                     this.onRemoteUpdateCallback(updatedDoc);
+                }
+            }
+        });
+
+        this.ydoc.on("update", (update: Uint8Array, origin: unknown) => {
+            if (origin !== CRDT_ORIGIN_REMOTE && origin !== CRDT_ORIGIN_INIT) {
+                const sv = Y.encodeStateVector(this.ydoc);
+                for (const listener of this.localDeltaListeners) {
+                    listener(update, sv);
                 }
             }
         });
@@ -303,11 +416,22 @@ export class CrdtDocumentBridge {
         return this.ydoc;
     }
 
+    public getUndoManager(): Y.UndoManager {
+        return this.undoManager;
+    }
+
+    public onLocalDelta(listener: (delta: Uint8Array, stateVector: Uint8Array) => void): () => void {
+        this.localDeltaListeners.add(listener);
+        return () => {
+            this.localDeltaListeners.delete(listener);
+        };
+    }
+
     public setOnRemoteUpdate(callback: (doc: RuxDocument) => void): void {
         this.onRemoteUpdateCallback = callback;
     }
 
-    public syncFromLocalDocument(document: RuxDocument): void {
+    public syncFromLocalDocument(document: RuxDocument, origin: unknown = CRDT_ORIGIN_LOCAL): void {
         this.isApplyingLocal = true;
         try {
             this.ydoc.transact(() => {
@@ -332,16 +456,27 @@ export class CrdtDocumentBridge {
                     }
                 }
 
+                const compMap = this.ydoc.getMap<unknown>("components");
+                const incomingComps = document.components ?? {};
+                const existingCompKeys = new Set<string>();
+                compMap.forEach((_, k) => existingCompKeys.add(k));
+                for (const [k, v] of Object.entries(incomingComps)) {
+                    if (JSON.stringify(compMap.get(k)) !== JSON.stringify(v)) {
+                        compMap.set(k, v);
+                    }
+                    existingCompKeys.delete(k);
+                }
+                for (const k of existingCompKeys) {
+                    compMap.delete(k);
+                }
+
                 let rootMap = this.ydoc.getMap<unknown>("root");
                 if (!rootMap.get("id")) {
-                    const initializedMap = widgetNodeToYMap(document.root);
-                    initializedMap.forEach((v, k) => {
-                        rootMap.set(k, v);
-                    });
+                    populateWidgetNodeToYMap(document.root, rootMap);
                 } else {
                     reconcileWidgetNodeToYMap(document.root, rootMap);
                 }
-            }, CRDT_ORIGIN_LOCAL);
+            }, origin);
         } finally {
             this.isApplyingLocal = false;
         }
@@ -379,13 +514,20 @@ export class CrdtDocumentBridge {
             custom_palettes: [],
         };
 
+        const compMap = this.ydoc.getMap<unknown>("components");
+        const componentsJson = compMap.toJSON() as Record<string, any>;
+        const components = Object.keys(componentsJson).length > 0 ? componentsJson : undefined;
+
         return {
             ...($schema ? { $schema } : {}),
             metadata,
             window: windowProps,
             assets,
             theme,
+            ...(components ? { components } : {}),
             root,
         };
     }
 }
+
+export const sharedCrdtBridge = new CrdtDocumentBridge();

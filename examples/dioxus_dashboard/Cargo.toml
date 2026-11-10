@@ -1,0 +1,11 @@
+[package]
+name = "dioxus_dashboard"
+version = "0.1.0"
+edition = "2021"
+description = "A responsive analytics dashboard built with Dioxus rsx! and Ruxel Studio"
+
+[workspace]
+
+[dependencies]
+dioxus = { version = "0.5.6", features = ["desktop"] }
+serde = { version = "1.0", features = ["derive"] }

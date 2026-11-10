@@ -34,7 +34,7 @@ fn create_node(id: &str, widget_type: WidgetType) -> WidgetNode {
 #[test]
 fn test_egui_animation_state_tracking() {
     let mut btn = create_node("anim_btn", WidgetType::Button);
-    btn.properties.text = Some("Animated Action".to_string());
+    btn.properties.text = Some("Animated Action".into());
     btn.animations = vec![
         AnimationDefinition {
             id: "fade_in".to_string(),

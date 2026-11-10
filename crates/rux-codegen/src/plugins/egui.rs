@@ -1,8 +1,13 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use rux_ast::document::RuxDocument;
-use rux_ast::widget::{WidgetNode, WidgetType};
-use syn::File;
+use rux_ast::widget::{
+    EventHandler, PropertyValue, WidgetBindings, WidgetEvents, WidgetNode, WidgetProperties,
+    WidgetType,
+};
+use syn::{
+    Expr, ExprCall, ExprClosure, ExprIf, ExprLit, File, Item, ItemFn, Lit, Stmt,
+};
 
 use crate::controller_merge::{generate_initial_controller, merge_controller};
 use crate::error::CodegenError;
@@ -10,8 +15,9 @@ use crate::events::{generate_ui_message_tokens, BoundEvent};
 use crate::generator::CodegenDiagnostic;
 use crate::handler::generate_ui_handler_tokens;
 use crate::plugin::{
-    CodeGenerator, CodegenOptions, CodegenOutput, FrameworkProfile, TargetFramework,
+    CodeGenerator, CodegenOptions, CodegenOutput, FrameworkProfile, GeneratedFile, TargetFramework,
 };
+use crate::reverse_parser::PropertyPatch;
 use crate::sanitizer::{make_ident, to_pascal_case, to_snake_case};
 use crate::state::{generate_app_state_tokens, InferredField};
 use crate::view::generate_widget_ids_tokens;
@@ -23,6 +29,356 @@ impl EguiPlugin {
         Self
     }
 
+    pub fn reverse_parse_egui(code: &str) -> Result<WidgetNode, CodegenError> {
+        let syntax_file: File = syn::parse_str(code)
+            .map_err(|e| CodegenError::SynParseError(format!("Failed to parse egui source: {}", e)))?;
+
+        let mut root_node = WidgetNode {
+            id: "root".to_string(),
+            widget_type: WidgetType::VBox,
+            slot: None,
+            properties: WidgetProperties::default(),
+            layout: None,
+            events: WidgetEvents::default(),
+            bindings: WidgetBindings::default(),
+            animations: Vec::new(),
+            children: Vec::new(),
+        };
+
+        let mut counter = 0;
+        for item in &syntax_file.items {
+            if let Item::Fn(ItemFn { sig, block, .. }) = item {
+                if sig.ident == "render_ui" {
+                    Self::parse_egui_stmts_into_node(&mut root_node, &block.stmts, &mut counter);
+                }
+            }
+        }
+
+        Ok(root_node)
+    }
+
+    pub fn patch_egui_document(
+        doc: &mut RuxDocument,
+        code: &str,
+        patches: &mut Vec<PropertyPatch>,
+    ) -> Result<(), CodegenError> {
+        let parsed = Self::reverse_parse_egui(code)?;
+        Self::reconcile_egui_node(&mut doc.root, &parsed, patches);
+        Ok(())
+    }
+
+    fn reconcile_egui_node(
+        target: &mut WidgetNode,
+        parsed: &WidgetNode,
+        patches: &mut Vec<PropertyPatch>,
+    ) {
+        if let Some(ref new_text) = parsed.properties.text {
+            if target.properties.text.as_ref() != Some(new_text) {
+                patches.push(PropertyPatch {
+                    widget_id: target.id.clone(),
+                    property_name: "text".to_string(),
+                    old_value: target.properties.text.as_ref().map(|t| t.to_string()),
+                    new_value: new_text.to_string(),
+                });
+                target.properties.text = Some(new_text.clone());
+            }
+        }
+
+        if let Some(ref new_img) = parsed.properties.image_path {
+            if target.properties.image_path.as_ref() != Some(new_img) {
+                patches.push(PropertyPatch {
+                    widget_id: target.id.clone(),
+                    property_name: "image_path".to_string(),
+                    old_value: target.properties.image_path.clone(),
+                    new_value: new_img.clone(),
+                });
+                target.properties.image_path = Some(new_img.clone());
+            }
+        }
+
+        let min_len = target.children.len().min(parsed.children.len());
+        for i in 0..min_len {
+            Self::reconcile_egui_node(&mut target.children[i], &parsed.children[i], patches);
+        }
+        if parsed.children.len() > target.children.len() {
+            for i in target.children.len()..parsed.children.len() {
+                let new_child = parsed.children[i].clone();
+                patches.push(PropertyPatch {
+                    widget_id: new_child.id.clone(),
+                    property_name: "created".to_string(),
+                    old_value: None,
+                    new_value: format!("{:?}", new_child.widget_type),
+                });
+                target.children.push(new_child);
+            }
+        }
+    }
+
+    fn parse_egui_stmts_into_node(
+        parent: &mut WidgetNode,
+        stmts: &[Stmt],
+        counter: &mut usize,
+    ) {
+        for stmt in stmts {
+            match stmt {
+                Stmt::Expr(expr, _) => {
+                    Self::parse_egui_expr_into_node(parent, expr, counter);
+                }
+                Stmt::Local(local) => {
+                    if let Some(init) = &local.init {
+                        Self::parse_egui_expr_into_node(parent, &init.expr, counter);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn parse_egui_expr_into_node(
+        parent: &mut WidgetNode,
+        expr: &Expr,
+        counter: &mut usize,
+    ) {
+        match expr {
+            Expr::Closure(ExprClosure { body, .. }) => {
+                if let Expr::Block(b) = &**body {
+                    Self::parse_egui_stmts_into_node(parent, &b.block.stmts, counter);
+                } else {
+                    Self::parse_egui_expr_into_node(parent, body, counter);
+                }
+            }
+            Expr::Block(b) => {
+                Self::parse_egui_stmts_into_node(parent, &b.block.stmts, counter);
+            }
+            Expr::If(ExprIf { cond, then_branch, else_branch, .. }) => {
+                let cond_str = quote::quote!(#cond).to_string();
+                if cond_str.contains(".clicked()") || cond_str.contains(".button(") || cond_str.contains("Button::new") {
+                    *counter += 1;
+                    let mut btn = WidgetNode {
+                        id: format!("button_{}", counter),
+                        widget_type: WidgetType::Button,
+                        slot: None,
+                        properties: WidgetProperties::default(),
+                        layout: None,
+                        events: WidgetEvents {
+                            on_click: Some(EventHandler {
+                                handler_name: "on_click".to_string(),
+                                message: None,
+                                navigate_to: None,
+                            }),
+                            ..Default::default()
+                        },
+                        bindings: WidgetBindings::default(),
+                        animations: Vec::new(),
+                        children: Vec::new(),
+                    };
+                    if let Some(txt) = extract_string_literal(cond) {
+                        btn.properties.text = Some(PropertyValue::Static(txt));
+                    }
+                    parent.children.push(btn);
+                } else {
+                    *counter += 1;
+                    let mut cond_node = WidgetNode {
+                        id: format!("cond_{}", counter),
+                        widget_type: WidgetType::ConditionalNode,
+                        slot: None,
+                        properties: WidgetProperties {
+                            condition: Some(cond_str),
+                            ..Default::default()
+                        },
+                        layout: None,
+                        events: WidgetEvents::default(),
+                        bindings: WidgetBindings::default(),
+                        animations: Vec::new(),
+                        children: Vec::new(),
+                    };
+                    Self::parse_egui_stmts_into_node(&mut cond_node, &then_branch.stmts, counter);
+                    if let Some((_, else_expr)) = else_branch {
+                        Self::parse_egui_expr_into_node(&mut cond_node, else_expr, counter);
+                    }
+                    parent.children.push(cond_node);
+                }
+            }
+            Expr::MethodCall(m) => {
+                let method = m.method.to_string();
+                if method == "vertical" || method == "horizontal" || method == "group" || method == "scope" || method == "show" {
+                    *counter += 1;
+                    let wtype = if method == "horizontal" {
+                        WidgetType::HBox
+                    } else if method == "show" && quote::quote!(#m.receiver).to_string().contains("ScrollArea") {
+                        WidgetType::ScrollPane
+                    } else {
+                        WidgetType::VBox
+                    };
+                    let mut container = WidgetNode {
+                        id: format!("{}_{}", method, counter),
+                        widget_type: wtype,
+                        slot: None,
+                        properties: WidgetProperties::default(),
+                        layout: None,
+                        events: WidgetEvents::default(),
+                        bindings: WidgetBindings::default(),
+                        animations: Vec::new(),
+                        children: Vec::new(),
+                    };
+                    for arg in &m.args {
+                        if let Expr::Closure(closure) = arg {
+                            if let Expr::Block(b) = &*closure.body {
+                                Self::parse_egui_stmts_into_node(&mut container, &b.block.stmts, counter);
+                            } else {
+                                Self::parse_egui_expr_into_node(&mut container, &closure.body, counter);
+                            }
+                        }
+                    }
+                    parent.children.push(container);
+                } else if method == "button" {
+                    *counter += 1;
+                    let mut btn = WidgetNode {
+                        id: format!("button_{}", counter),
+                        widget_type: WidgetType::Button,
+                        slot: None,
+                        properties: WidgetProperties::default(),
+                        layout: None,
+                        events: WidgetEvents::default(),
+                        bindings: WidgetBindings::default(),
+                        animations: Vec::new(),
+                        children: Vec::new(),
+                    };
+                    if let Some(txt) = m.args.first().and_then(extract_string_literal) {
+                        btn.properties.text = Some(PropertyValue::Static(txt));
+                    }
+                    parent.children.push(btn);
+                } else if method == "label" {
+                    *counter += 1;
+                    let mut lbl = WidgetNode {
+                        id: format!("label_{}", counter),
+                        widget_type: WidgetType::Label,
+                        slot: None,
+                        properties: WidgetProperties::default(),
+                        layout: None,
+                        events: WidgetEvents::default(),
+                        bindings: WidgetBindings::default(),
+                        animations: Vec::new(),
+                        children: Vec::new(),
+                    };
+                    if let Some(txt) = m.args.first().and_then(extract_string_literal) {
+                        lbl.properties.text = Some(PropertyValue::Static(txt));
+                    }
+                    parent.children.push(lbl);
+                } else if method == "checkbox" {
+                    *counter += 1;
+                    let mut chk = WidgetNode {
+                        id: format!("checkbox_{}", counter),
+                        widget_type: WidgetType::Checkbox,
+                        slot: None,
+                        properties: WidgetProperties::default(),
+                        layout: None,
+                        events: WidgetEvents::default(),
+                        bindings: WidgetBindings::default(),
+                        animations: Vec::new(),
+                        children: Vec::new(),
+                    };
+                    if let Some(txt) = m.args.iter().find_map(extract_string_literal) {
+                        chk.properties.text = Some(PropertyValue::Static(txt));
+                    }
+                    parent.children.push(chk);
+                } else if method == "image" {
+                    *counter += 1;
+                    let img_path = m
+                        .args
+                        .first()
+                        .and_then(extract_string_literal)
+                        .map(|p| rux_ast::asset::normalize_image_path(&p));
+                    let img = WidgetNode {
+                        id: format!("image_{}", counter),
+                        widget_type: WidgetType::Image,
+                        slot: None,
+                        properties: WidgetProperties {
+                            image_path: img_path,
+                            ..Default::default()
+                        },
+                        layout: None,
+                        events: WidgetEvents::default(),
+                        bindings: WidgetBindings::default(),
+                        animations: Vec::new(),
+                        children: Vec::new(),
+                    };
+                    parent.children.push(img);
+                } else if method == "add" || method == "add_sized" {
+                    if let Some(arg) = m.args.last() {
+                        let arg_str = quote::quote!(#arg).to_string();
+                        *counter += 1;
+                        let (wtype, txt_opt) = if arg_str.contains("Button") {
+                            (WidgetType::Button, extract_string_literal(arg))
+                        } else if arg_str.contains("Label") {
+                            (WidgetType::Label, extract_string_literal(arg))
+                        } else if arg_str.contains("Checkbox") {
+                            (WidgetType::Checkbox, extract_string_literal(arg))
+                        } else if arg_str.contains("Slider") {
+                            (WidgetType::Slider, extract_string_literal(arg))
+                        } else if arg_str.contains("Image") {
+                            (WidgetType::Image, extract_string_literal(arg))
+                        } else {
+                            (WidgetType::GenericWidget, None)
+                        };
+
+                        let mut node = WidgetNode {
+                            id: format!("widget_{}", counter),
+                            widget_type: wtype,
+                            slot: None,
+                            properties: WidgetProperties::default(),
+                            layout: None,
+                            events: WidgetEvents::default(),
+                            bindings: WidgetBindings::default(),
+                            animations: Vec::new(),
+                            children: Vec::new(),
+                        };
+                        if let Some(txt) = txt_opt {
+                            if node.widget_type == WidgetType::Image {
+                                node.properties.image_path = Some(rux_ast::asset::normalize_image_path(&txt));
+                            } else {
+                                node.properties.text = Some(PropertyValue::Static(txt));
+                            }
+                        }
+                        parent.children.push(node);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Default for EguiPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn extract_string_literal(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Lit(ExprLit { lit: Lit::Str(s), .. }) => Some(s.value()),
+        Expr::Call(ExprCall { args, .. }) => {
+            for arg in args {
+                if let Some(s) = extract_string_literal(arg) {
+                    return Some(s);
+                }
+            }
+            None
+        }
+        Expr::MethodCall(m) => {
+            for arg in &m.args {
+                if let Some(s) = extract_string_literal(arg) {
+                    return Some(s);
+                }
+            }
+            extract_string_literal(&m.receiver)
+        }
+        _ => None,
+    }
+}
+
+impl EguiPlugin {
     fn generate_widget_stmts(&self, node: &WidgetNode, events: &[BoundEvent]) -> TokenStream {
         let child_stmts: Vec<TokenStream> = node
             .children
@@ -83,7 +439,7 @@ impl EguiPlugin {
                         .properties
                         .text
                         .as_deref()
-                        .unwrap_or_else(|| node.id.as_str());
+                        .unwrap_or(node.id.as_str());
                     quote!(#txt)
                 };
 
@@ -98,7 +454,9 @@ impl EguiPlugin {
                     .iter()
                     .find(|ev| ev.widget_id == node.id && ev.event_kind == "on_click");
 
-                let btn_response = if let Some(target_screen) = nav_target {
+                
+
+                if let Some(target_screen) = nav_target {
                     let screen_ident = make_ident(&to_pascal_case(target_screen));
                     if let Some(aria) = &node.properties.aria_label {
                         quote! {
@@ -142,9 +500,7 @@ impl EguiPlugin {
                             let _ = ui.button(#btn_text_expr);
                         }
                     }
-                };
-
-                btn_response
+                }
             }
             WidgetType::Label => {
                 let lbl_core = if let Some(binding) = &node.bindings.value {
@@ -161,7 +517,7 @@ impl EguiPlugin {
                         .properties
                         .text
                         .as_deref()
-                        .unwrap_or_else(|| node.id.as_str());
+                        .unwrap_or(node.id.as_str());
                     quote! {
                         ui.label(#lbl_text)
                     }
@@ -223,7 +579,7 @@ impl EguiPlugin {
                     .properties
                     .text
                     .as_deref()
-                    .unwrap_or_else(|| node.id.as_str());
+                    .unwrap_or(node.id.as_str());
 
                 let field_ident = if let Some(binding) = &node.bindings.value {
                     make_ident(&to_snake_case(binding))
@@ -253,7 +609,7 @@ impl EguiPlugin {
                     .properties
                     .text
                     .as_deref()
-                    .unwrap_or_else(|| node.id.as_str());
+                    .unwrap_or(node.id.as_str());
 
                 let field_ident = if let Some(binding) = &node.bindings.value {
                     make_ident(&to_snake_case(binding))
@@ -285,7 +641,7 @@ impl EguiPlugin {
                     .properties
                     .text
                     .as_deref()
-                    .unwrap_or_else(|| node.id.as_str());
+                    .unwrap_or(node.id.as_str());
 
                 let field_ident = if let Some(binding) = &node.bindings.value {
                     make_ident(&to_snake_case(binding))
@@ -416,7 +772,7 @@ impl EguiPlugin {
                 }
             }
             WidgetType::TreeView => {
-                let header_text = node.properties.text.as_deref().unwrap_or_else(|| node.id.as_str());
+                let header_text = node.properties.text.as_deref().unwrap_or(node.id.as_str());
                 if child_stmts.is_empty() {
                     quote! {
                         egui::CollapsingHeader::new(#header_text)
@@ -443,6 +799,39 @@ impl EguiPlugin {
                     ui.group(|ui| {
                         ui.label(format!("3D Viewport: {} (FOV: {:.0})", #model_path, #fov));
                     });
+                }
+            }
+            WidgetType::ConditionalNode => {
+                let cond_str = node.properties.condition.as_deref().unwrap_or("true");
+                let cond_tokens: TokenStream = syn::parse_str(cond_str).unwrap_or_else(|_| quote!(#cond_str));
+                quote! {
+                    if #cond_tokens {
+                        #(#child_stmts)*
+                    }
+                }
+            }
+            WidgetType::GenericWidget => {
+                let custom_str = node.properties.custom_type.as_deref().unwrap_or("GenericWidget::new");
+                let custom_tokens: TokenStream = syn::parse_str(custom_str).unwrap_or_else(|_| quote!(#custom_str));
+                if let Some(ref raw_args) = node.properties.raw_args {
+                    let args_tokens: TokenStream = syn::parse_str(raw_args).unwrap_or_else(|_| quote!(#raw_args));
+                    quote! {
+                        #custom_tokens(ui, #args_tokens);
+                    }
+                } else {
+                    quote! {
+                        #custom_tokens(ui);
+                    }
+                }
+            }
+            WidgetType::CustomComponent => {
+                let comp_name = node.properties.custom_type.as_deref().unwrap_or("CustomComponent");
+                if let Some(ref raw_args) = node.properties.raw_args {
+                    let call_tokens: TokenStream = syn::parse_str(raw_args).unwrap_or_else(|_| quote!(#raw_args));
+                    quote! { #call_tokens; }
+                } else {
+                    let comp_ident: TokenStream = syn::parse_str(comp_name).unwrap_or_else(|_| quote!(#comp_name));
+                    quote! { #comp_ident::show(ui); }
                 }
             }
             _ => {
@@ -530,7 +919,22 @@ impl CodeGenerator for EguiPlugin {
 
         let syntax_file: File = syn::parse2(file_tokens)
             .map_err(|e| CodegenError::SynParseError(format!("{}", e)))?;
-        let ui_generated_code = prettyplease::unparse(&syntax_file);
+        let mut ui_generated_code = if let Some(ref existing) = _options.existing_ui_code {
+            if !existing.trim().is_empty() {
+                match crate::patcher::AstPatcher::patch_ui_source(existing, doc, TargetFramework::Egui) {
+                    Ok(patched) => patched,
+                    Err(_) => prettyplease::unparse(&syntax_file),
+                }
+            } else {
+                prettyplease::unparse(&syntax_file)
+            }
+        } else {
+            prettyplease::unparse(&syntax_file)
+        };
+
+        if !doc.components.is_empty() && !ui_generated_code.contains("pub mod components;") {
+            ui_generated_code = format!("pub mod components;\npub use components::*;\n\n{}", ui_generated_code);
+        }
 
         let mut diagnostics = Vec::new();
         let controller_code = match existing_controller {
@@ -569,6 +973,30 @@ impl CodeGenerator for EguiPlugin {
             TargetFramework::Egui,
         );
         auxiliary_files.push(router_file);
+
+        if !doc.components.is_empty() {
+            let mut mod_exports = String::new();
+            for (comp_name, comp_def) in &doc.components {
+                let snake = crate::sanitizer::to_snake_case(comp_name);
+                let comp_tokens = self.generate_widget_stmts(&comp_def.root, events);
+                let comp_code = format!(
+                    "//! Component {}\nuse egui::Ui;\n\npub struct {};\n\nimpl {} {{\n    pub fn show(ui: &mut Ui) {{\n        {}\n    }}\n}}\n",
+                    comp_name, comp_name, comp_name, comp_tokens
+                );
+                let filename = comp_def.file_path.clone().unwrap_or_else(|| format!("src/components/{}.rs", snake));
+                auxiliary_files.push(GeneratedFile {
+                    filename,
+                    content: comp_code,
+                    file_type: "component".to_string(),
+                });
+                mod_exports.push_str(&format!("pub mod {};\npub use {}::*;\n", snake, snake));
+            }
+            auxiliary_files.push(GeneratedFile {
+                filename: "src/components/mod.rs".to_string(),
+                content: mod_exports,
+                file_type: "component_module".to_string(),
+            });
+        }
 
         Ok(CodegenOutput {
             ui_generated_filename: "ui_generated.rs".to_string(),

@@ -132,6 +132,8 @@ pub struct CodegenOptions {
     pub target_framework: Option<TargetFramework>,
     pub custom_ui_filename: Option<String>,
     pub custom_controller_filename: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub existing_ui_code: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

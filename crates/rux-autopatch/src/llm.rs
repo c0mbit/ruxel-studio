@@ -296,7 +296,7 @@ Requirements:
             context.from_version,
             context.to_version,
             if breaking_summary.is_empty() { "None detected explicitly." } else { &breaking_summary },
-            &context.analysis.raw_changelog,
+            context.analysis.raw_changelog,
             context.current_plugin_code
         )
     }

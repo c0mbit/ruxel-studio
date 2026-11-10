@@ -1,0 +1,11 @@
+[package]
+name = "iced_todo_app"
+version = "0.1.0"
+edition = "2021"
+description = "A responsive To-Do application built with Iced and Ruxel Studio"
+
+[workspace]
+
+[dependencies]
+iced = "0.13"
+serde = { version = "1.0", features = ["derive"] }

@@ -62,7 +62,7 @@ fn test_egui_codegen_datagrid() {
 #[test]
 fn test_egui_codegen_chart() {
     let mut chart_node = create_node("revenue_chart", WidgetType::Chart);
-    chart_node.properties.text = Some("ARR Growth".to_string());
+    chart_node.properties.text = Some("ARR Growth".into());
 
     let doc = create_sample_document(chart_node);
     let plugin = EguiPlugin::new();
@@ -76,7 +76,7 @@ fn test_egui_codegen_chart() {
 #[test]
 fn test_egui_codegen_treeview() {
     let mut tree_node = create_node("project_tree", WidgetType::TreeView);
-    tree_node.properties.text = Some("Workspace".to_string());
+    tree_node.properties.text = Some("Workspace".into());
     tree_node.children = vec![create_node("leaf_item", WidgetType::Label)];
 
     let doc = create_sample_document(tree_node);
@@ -91,11 +91,11 @@ fn test_egui_codegen_treeview() {
 fn test_iced_codegen_enterprise_widgets() {
     let mut container = create_node("root_col", WidgetType::VBox);
     let mut grid_node = create_node("table_grid", WidgetType::DataGrid);
-    grid_node.properties.text = Some("Enterprise Table".to_string());
+    grid_node.properties.text = Some("Enterprise Table".into());
     let mut chart_node = create_node("analytics_chart", WidgetType::Chart);
-    chart_node.properties.text = Some("Performance Series".to_string());
+    chart_node.properties.text = Some("Performance Series".into());
     let mut tree_node = create_node("file_tree", WidgetType::TreeView);
-    tree_node.properties.text = Some("File System".to_string());
+    tree_node.properties.text = Some("File System".into());
     let mut view3d_node = create_node("viewport", WidgetType::Viewport3D);
     view3d_node.properties.model_3d_path = Some("assets/cube.gltf".to_string());
 
@@ -156,7 +156,7 @@ fn test_flet_codegen_enterprise_widgets() {
 fn test_reverse_parser_enterprise_resilience() {
     let mut container = create_node("root", WidgetType::VBox);
     let mut btn = create_node("btn_test", WidgetType::Button);
-    btn.properties.text = Some("Old Name".to_string());
+    btn.properties.text = Some("Old Name".into());
     let grid = create_node("grid_test", WidgetType::DataGrid);
     container.children = vec![btn, grid];
 

@@ -19,6 +19,12 @@ impl FynePlugin {
     }
 }
 
+impl Default for FynePlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CodeGenerator for FynePlugin {
     fn target_framework(&self) -> TargetFramework {
         TargetFramework::Fyne

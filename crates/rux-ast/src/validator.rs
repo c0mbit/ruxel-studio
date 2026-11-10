@@ -164,6 +164,7 @@ impl DocumentValidator {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn validate_node_recursive(
         &self,
         node: &WidgetNode,
@@ -668,6 +669,7 @@ mod tests {
                 },
             },
             root,
+            components: std::collections::BTreeMap::new(),
         }
     }
 

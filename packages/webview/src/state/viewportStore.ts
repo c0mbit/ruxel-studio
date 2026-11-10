@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { clamp } from "../viewport/geometry";
 import type {
     Camera,
     DistanceIndicator,
@@ -9,6 +8,154 @@ import type {
     Point,
     Rect,
 } from "../viewport/types";
+
+function clamp(val: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, val));
+}
+
+export type DevicePreset = "mobile" | "tablet" | "desktop" | "responsive";
+export type DeviceOrientation = "portrait" | "landscape";
+
+export interface ViewportDimensions {
+    readonly width: number;
+    readonly height: number;
+}
+
+export interface DevicePresetConfig {
+    readonly id: DevicePreset;
+    readonly label: string;
+    readonly width: number;
+    readonly height: number;
+    readonly icon: string;
+}
+
+export const DEVICE_PRESETS: Record<"mobile" | "tablet" | "desktop", ViewportDimensions> = {
+    mobile: { width: 375, height: 812 },
+    tablet: { width: 768, height: 1024 },
+    desktop: { width: 1440, height: 900 },
+};
+
+export const MIN_VIEWPORT_WIDTH = 280;
+export const MAX_VIEWPORT_WIDTH = 3840;
+export const MIN_VIEWPORT_HEIGHT = 200;
+export const MAX_VIEWPORT_HEIGHT = 2560;
+
+/**
+ * Calculates effective dimensions for a given device mode, orientation, and custom dimensions.
+ */
+export function calculateEffectiveDimensions(
+    mode: DevicePreset,
+    orientation: DeviceOrientation,
+    customDimensions: ViewportDimensions,
+    fallbackDimensions?: ViewportDimensions
+): ViewportDimensions {
+    if (mode === "responsive") {
+        return {
+            width: clamp(customDimensions.width, MIN_VIEWPORT_WIDTH, MAX_VIEWPORT_WIDTH),
+            height: clamp(customDimensions.height, MIN_VIEWPORT_HEIGHT, MAX_VIEWPORT_HEIGHT),
+        };
+    }
+
+    const preset = DEVICE_PRESETS[mode];
+    if (!preset) {
+        return fallbackDimensions ?? { width: 1200, height: 800 };
+    }
+
+    if (mode === "desktop") {
+        // Desktop default is landscape (1440x900). Portrait is 900x1440.
+        if (orientation === "portrait") {
+            return {
+                width: Math.min(preset.width, preset.height),
+                height: Math.max(preset.width, preset.height),
+            };
+        }
+        return {
+            width: Math.max(preset.width, preset.height),
+            height: Math.min(preset.width, preset.height),
+        };
+    }
+
+    // Mobile / Tablet default is portrait.
+    if (orientation === "landscape") {
+        return {
+            width: Math.max(preset.width, preset.height),
+            height: Math.min(preset.width, preset.height),
+        };
+    }
+
+    return {
+        width: Math.min(preset.width, preset.height),
+        height: Math.max(preset.width, preset.height),
+    };
+}
+
+/**
+ * Calculates the proportional scale factor when a device frame exceeds available panel bounds.
+ */
+export function calculateProportionalScale(
+    availableWidth: number,
+    availableHeight: number,
+    targetWidth: number,
+    targetHeight: number,
+    padding = 32
+): number {
+    if (targetWidth <= 0 || targetHeight <= 0) {
+        return 1.0;
+    }
+    const maxUsableWidth = Math.max(100, availableWidth - padding * 2);
+    const maxUsableHeight = Math.max(100, availableHeight - padding * 2);
+
+    const scaleX = maxUsableWidth / targetWidth;
+    const scaleY = maxUsableHeight / targetHeight;
+
+    const fit = Math.min(scaleX, scaleY);
+    if (fit < 1.0) {
+        return Math.max(0.1, Number(fit.toFixed(3)));
+    }
+    return 1.0;
+}
+
+/**
+ * Calculates centered viewport frame bounds and transform parameters.
+ */
+export function calculateViewportFrameBounds(
+    availableWidth: number,
+    availableHeight: number,
+    targetWidth: number,
+    targetHeight: number,
+    scale: number
+): { x: number; y: number; width: number; height: number; scale: number } {
+    const scaledWidth = targetWidth * scale;
+    const scaledHeight = targetHeight * scale;
+
+    const x = Math.max(16, (availableWidth - scaledWidth) / 2);
+    const y = Math.max(16, (availableHeight - scaledHeight) / 2);
+
+    return {
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.round(targetWidth),
+        height: Math.round(targetHeight),
+        scale,
+    };
+}
+
+/**
+ * Adjusts pointer screen coordinates relative to a scaled viewport frame.
+ */
+export function mapPointerToViewport(
+    screenX: number,
+    screenY: number,
+    frameX: number,
+    frameY: number,
+    scale: number
+): { x: number; y: number } {
+    const safeScale = scale > 0 ? scale : 1.0;
+    return {
+        x: Math.round((screenX - frameX) / safeScale),
+        y: Math.round((screenY - frameY) / safeScale),
+    };
+}
 
 export interface ViewportState {
     readonly camera: Camera;
@@ -24,6 +171,14 @@ export interface ViewportState {
     readonly distanceIndicators: readonly DistanceIndicator[];
     readonly hoveredNodeId: string | null;
     readonly nodeBounds: ReadonlyMap<string, NodeBounds>;
+
+    // Responsive Preview State
+    readonly deviceMode: DevicePreset;
+    readonly orientation: DeviceOrientation;
+    readonly customDimensions: ViewportDimensions;
+    readonly isCustomResizing: boolean;
+    readonly autoFitScale: boolean;
+    readonly previewScale: number;
 
     readonly setCamera: (panX: number, panY: number, zoom: number) => void;
     readonly panBy: (deltaX: number, deltaY: number) => void;
@@ -58,6 +213,26 @@ export interface ViewportState {
     readonly registerNodeBounds: (bounds: NodeBounds) => void;
     readonly unregisterNodeBounds: (id: string) => void;
     readonly clearAllBounds: () => void;
+
+    // Responsive Preview Actions
+    readonly setDeviceMode: (mode: DevicePreset) => void;
+    readonly setOrientation: (orientation: DeviceOrientation) => void;
+    readonly toggleOrientation: () => void;
+    readonly setCustomDimensions: (
+        dimensions:
+            | ViewportDimensions
+            | ((prev: ViewportDimensions) => ViewportDimensions)
+    ) => void;
+    readonly setCustomWidth: (width: number) => void;
+    readonly setCustomHeight: (height: number) => void;
+    readonly setIsCustomResizing: (isResizing: boolean) => void;
+    readonly setAutoFitScale: (autoFit: boolean) => void;
+    readonly setPreviewScale: (scale: number) => void;
+    readonly getEffectiveDimensions: () => ViewportDimensions;
+    readonly resetToDefaultResolution: (
+        defaultWidth?: number,
+        defaultHeight?: number
+    ) => void;
 }
 
 const MIN_ZOOM = 0.1;
@@ -81,6 +256,17 @@ export const useViewportStore = create<ViewportState>((set, get) => ({
     distanceIndicators: [],
     hoveredNodeId: null,
     nodeBounds: new Map(),
+
+    // Responsive Preview initial state
+    deviceMode: "responsive",
+    orientation: "portrait",
+    customDimensions: {
+        width: 1200,
+        height: 800,
+    },
+    isCustomResizing: false,
+    autoFitScale: true,
+    previewScale: 1.0,
 
     setCamera: (panX, panY, zoom) => {
         set({
@@ -240,5 +426,85 @@ export const useViewportStore = create<ViewportState>((set, get) => ({
     clearAllBounds: () => {
         set({ nodeBounds: new Map() });
     },
-}));
 
+    // Responsive Preview Actions Implementation
+    setDeviceMode: (mode) => {
+        set({
+            deviceMode: mode,
+            orientation: mode === "desktop" ? "landscape" : "portrait",
+        });
+    },
+
+    setOrientation: (orientation) => {
+        set({ orientation });
+    },
+
+    toggleOrientation: () => {
+        const current = get().orientation;
+        set({ orientation: current === "portrait" ? "landscape" : "portrait" });
+    },
+
+    setCustomDimensions: (dimensions) => {
+        const current = get().customDimensions;
+        const next =
+            typeof dimensions === "function" ? dimensions(current) : dimensions;
+        set({
+            customDimensions: {
+                width: clamp(next.width, MIN_VIEWPORT_WIDTH, MAX_VIEWPORT_WIDTH),
+                height: clamp(next.height, MIN_VIEWPORT_HEIGHT, MAX_VIEWPORT_HEIGHT),
+            },
+        });
+    },
+
+    setCustomWidth: (width) => {
+        const current = get().customDimensions;
+        set({
+            customDimensions: {
+                ...current,
+                width: clamp(width, MIN_VIEWPORT_WIDTH, MAX_VIEWPORT_WIDTH),
+            },
+        });
+    },
+
+    setCustomHeight: (height) => {
+        const current = get().customDimensions;
+        set({
+            customDimensions: {
+                ...current,
+                height: clamp(height, MIN_VIEWPORT_HEIGHT, MAX_VIEWPORT_HEIGHT),
+            },
+        });
+    },
+
+    setIsCustomResizing: (isResizing) => {
+        set({ isCustomResizing: isResizing });
+    },
+
+    setAutoFitScale: (autoFit) => {
+        set({ autoFitScale: autoFit });
+    },
+
+    setPreviewScale: (scale) => {
+        set({ previewScale: scale });
+    },
+
+    getEffectiveDimensions: () => {
+        const { deviceMode, orientation, customDimensions } = get();
+        return calculateEffectiveDimensions(
+            deviceMode,
+            orientation,
+            customDimensions
+        );
+    },
+
+    resetToDefaultResolution: (defaultWidth = 1200, defaultHeight = 800) => {
+        set({
+            deviceMode: "responsive",
+            orientation: "portrait",
+            customDimensions: {
+                width: defaultWidth,
+                height: defaultHeight,
+            },
+        });
+    },
+}));

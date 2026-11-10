@@ -4,8 +4,9 @@ import type {
     RoomConnectionStatus,
     SyncServerConfig,
 } from "@ruxel/shared-types";
-import { CrdtDocumentBridge } from "../crdt/crdtBridge";
-import { CrdtSyncClient } from "../crdt/crdtSyncClient";
+import { CrdtDocumentBridge, sharedCrdtBridge } from "../crdt/crdtBridge.ts";
+import { CrdtSyncClient } from "../crdt/crdtSyncClient.ts";
+export { sharedCrdtBridge };
 
 const DEFAULT_SERVER_URL = "ws://127.0.0.1:4040/ws";
 
@@ -30,7 +31,6 @@ function getRandomUserName(): string {
     return `Developer-${randomSuffix}`;
 }
 
-export const sharedCrdtBridge = new CrdtDocumentBridge();
 export const sharedCrdtClient = new CrdtSyncClient(sharedCrdtBridge);
 
 export interface CrdtState {

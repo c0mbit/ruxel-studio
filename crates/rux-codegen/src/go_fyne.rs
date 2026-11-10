@@ -349,7 +349,7 @@ fn generate_node_go_expr(
                 child_vars.join(", ")
             ));
         }
-        WidgetType::VBox | _ => {
+        _ => {
             let mut child_vars = Vec::new();
             for child in &node.children {
                 child_vars.push(generate_node_go_expr(out, child, events, counter));
@@ -442,7 +442,7 @@ pub fn merge_go_controller(existing: &str, events: &[BoundEvent]) -> Result<Stri
         let method = to_pascal_case(&ev.handler_name);
         let pattern = format!("func (c *Controller) {}", method);
         if !out.contains(&pattern) {
-            out.push_str("\n");
+            out.push('\n');
             match ev.payload_type {
                 EventPayloadType::Unit => {
                     out.push_str(&format!(

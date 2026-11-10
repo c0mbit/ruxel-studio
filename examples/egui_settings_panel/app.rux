@@ -1,0 +1,133 @@
+{
+  "$schema": "https://ruxel.dev/schemas/rux-document.schema.json",
+  "metadata": {
+    "schema_version": "1.0.0",
+    "app_name": "EguiSettingsPanel",
+    "app_version": "0.1.0",
+    "target_frameworks": ["egui"],
+    "description": "Functional configuration settings panel built with egui immediate mode and Ruxel Studio",
+    "authors": ["Ruxel Studio Team"],
+    "license": "MIT OR Apache-2.0",
+    "created_at": "2026-11-10T00:00:00Z",
+    "updated_at": "2026-11-10T00:00:00Z"
+  },
+  "window": {
+    "title": "Ruxel Studio — egui Configuration Panel",
+    "initial_width": 680.0,
+    "initial_height": 520.0,
+    "min_width": 480.0,
+    "min_height": 380.0,
+    "resizable": true,
+    "scale_mode": "logical",
+    "transparent": false,
+    "decorations": true,
+    "always_on_top": false,
+    "fullscreen": false
+  },
+  "assets": {
+    "fonts": [],
+    "icons": [],
+    "images": []
+  },
+  "themes": {
+    "default_mode": "dark",
+    "color_tokens": {
+      "light": {},
+      "dark": {}
+    },
+    "typography": {}
+  },
+  "root": {
+    "id": "settings_root",
+    "widget_type": "v_box",
+    "properties": {
+      "spacing": 16.0
+    },
+    "children": [
+      {
+        "id": "settings_heading",
+        "widget_type": "label",
+        "properties": {
+          "text": "Ruxel Preferences",
+          "font_size": 22.0
+        }
+      },
+      {
+        "id": "chk_dark_mode",
+        "widget_type": "checkbox",
+        "properties": {
+          "text": "Enable High-Contrast Dark Mode",
+          "checked": true
+        },
+        "events": {
+          "on_toggle": {
+            "handler_name": "on_toggle_dark_mode",
+            "message": "ToggleDarkMode"
+          }
+        }
+      },
+      {
+        "id": "chk_telemetry",
+        "widget_type": "checkbox",
+        "properties": {
+          "text": "Anonymous crash reporting telemetry (GDPR compliant)",
+          "checked": false
+        },
+        "events": {
+          "on_toggle": {
+            "handler_name": "on_toggle_telemetry",
+            "message": "ToggleTelemetry"
+          }
+        }
+      },
+      {
+        "id": "input_server_url",
+        "widget_type": "text_input",
+        "properties": {
+          "placeholder": "Sync server endpoint (e.g. ws://127.0.0.1:4040)"
+        },
+        "events": {
+          "on_change": {
+            "handler_name": "on_server_url_change",
+            "message": "ServerUrlChanged"
+          }
+        }
+      },
+      {
+        "id": "actions_row",
+        "widget_type": "h_box",
+        "properties": {
+          "spacing": 12.0
+        },
+        "children": [
+          {
+            "id": "save_settings_btn",
+            "widget_type": "button",
+            "properties": {
+              "text": "Save Preferences"
+            },
+            "events": {
+              "on_click": {
+                "handler_name": "on_save_preferences",
+                "message": "SavePreferences"
+              }
+            }
+          },
+          {
+            "id": "reset_defaults_btn",
+            "widget_type": "button",
+            "properties": {
+              "text": "Reset to Defaults"
+            },
+            "events": {
+              "on_click": {
+                "handler_name": "on_reset_defaults",
+                "message": "ResetDefaults"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

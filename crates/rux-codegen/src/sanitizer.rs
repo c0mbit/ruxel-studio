@@ -45,7 +45,7 @@ pub fn to_snake_case(input: &str) -> String {
         "field_value".to_string()
     } else if is_rust_keyword(&trimmed) {
         format!("r#{}", trimmed)
-    } else if trimmed.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+    } else if trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) {
         format!("field_{}", trimmed)
     } else {
         trimmed
@@ -72,7 +72,7 @@ pub fn to_pascal_case(input: &str) -> String {
 
     if result.is_empty() {
         "CustomMessage".to_string()
-    } else if result.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+    } else if result.chars().next().is_some_and(|c| c.is_ascii_digit()) {
         format!("Msg{}", result)
     } else {
         result

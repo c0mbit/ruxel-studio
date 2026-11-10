@@ -8,7 +8,7 @@ use crate::client::FigmaClient;
 use crate::error::FigmaError;
 use crate::models::FigmaNode;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DownloadedAssetsReport {
     pub registry: AssetRegistry,
     pub downloaded_files: Vec<String>,
@@ -204,11 +204,10 @@ impl<'a> AssetDownloader<'a> {
         for ch in input.chars() {
             if ch.is_ascii_alphanumeric() {
                 result.push(ch.to_ascii_lowercase());
-            } else if ch == '_' || ch == '-' || ch == ' ' {
-                if !result.ends_with('_') && !result.is_empty() {
+            } else if (ch == '_' || ch == '-' || ch == ' ')
+                && !result.ends_with('_') && !result.is_empty() {
                     result.push('_');
                 }
-            }
         }
         if result.is_empty() {
             "asset".to_string()

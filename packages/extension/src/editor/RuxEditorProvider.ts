@@ -1,3 +1,4 @@
+import * as path from "path";
 import * as vscode from "vscode";
 import type { DaemonClient } from "../daemon/DaemonClient";
 import { RuxDocumentManager } from "./RuxDocumentManager";
@@ -18,6 +19,11 @@ export class RuxEditorProvider implements vscode.CustomTextEditorProvider {
         webviewPanel: vscode.WebviewPanel,
         _token: vscode.CancellationToken
     ): Promise<void> {
+        const workspaceRoots = vscode.workspace.workspaceFolders
+            ? vscode.workspace.workspaceFolders.map((wf) => wf.uri)
+            : [];
+        const docDirUri = vscode.Uri.file(path.dirname(document.uri.fsPath));
+
         webviewPanel.webview.options = {
             enableScripts: true,
             localResourceRoots: [
@@ -25,6 +31,8 @@ export class RuxEditorProvider implements vscode.CustomTextEditorProvider {
                 vscode.Uri.joinPath(this.context.extensionUri, "webview-dist"),
                 vscode.Uri.joinPath(this.context.extensionUri, "dist"),
                 vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview"),
+                ...workspaceRoots,
+                docDirUri,
             ],
         };
 

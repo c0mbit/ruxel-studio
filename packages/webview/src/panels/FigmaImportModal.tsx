@@ -5,7 +5,7 @@ import { useEditorStore } from "../state/editorStore";
 interface FigmaImportModalProps {
     readonly isOpen: boolean;
     readonly onClose: () => void;
-    readonly onImport: (token: string, fileKeyOrUrl: string, nodeId?: string) => void;
+    readonly onImport: (token: string, fileKeyOrUrl: string, nodeId?: string, figmaJson?: string) => void;
 }
 
 export const FigmaImportModal: FC<FigmaImportModalProps> = ({
@@ -19,8 +19,10 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
         (state) => state.applyImportedFigmaDocument
     );
 
+    const [activeTab, setActiveTab] = useState<"api" | "json">("api");
     const [figmaToken, setFigmaToken] = useState<string>("");
     const [figmaUrl, setFigmaUrl] = useState<string>("");
+    const [pluginJson, setPluginJson] = useState<string>("");
     const [showToken, setShowToken] = useState<boolean>(false);
     const [localError, setLocalError] = useState<string | null>(null);
 
@@ -62,6 +64,21 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
 
     const handleSubmit = () => {
         setLocalError(null);
+        if (activeTab === "json") {
+            if (!pluginJson.trim()) {
+                setLocalError("Please paste valid Figma plugin JSON");
+                return;
+            }
+            try {
+                JSON.parse(pluginJson.trim());
+            } catch (err: unknown) {
+                setLocalError(`Invalid JSON syntax: ${err instanceof Error ? err.message : String(err)}`);
+                return;
+            }
+            onImport("", "", undefined, pluginJson.trim());
+            return;
+        }
+
         if (!figmaToken.trim()) {
             setLocalError("Please enter your Figma Personal Access Token");
             return;
@@ -365,58 +382,104 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
                         </div>
                     )}
 
-                    <div className="space-y-1.5">
-                        <label className="block text-xs font-medium text-zinc-300">
-                            Personal Access Token (PAT)
-                        </label>
-                        <div className="relative">
-                            <input
-                                type={showToken ? "text" : "password"}
-                                value={figmaToken}
-                                onChange={(e) => setFigmaToken(e.target.value)}
-                                disabled={isImporting}
-                                placeholder="figd_..."
-                                className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3.5 py-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition disabled:opacity-50 pr-10 font-mono"
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowToken(!showToken)}
-                                disabled={isImporting}
-                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 text-xs p-1"
-                            >
-                                {showToken ? "Hide" : "Show"}
-                            </button>
-                        </div>
-                        <p className="text-[11px] text-zinc-500">
-                            Generate in Figma &rarr; Settings &rarr; Security &rarr; Personal Access Tokens
-                        </p>
+                    <div className="flex border-b border-zinc-800 mb-2">
+                        <button
+                            type="button"
+                            onClick={() => { setActiveTab("api"); setLocalError(null); }}
+                            className={`px-4 py-2 text-xs font-medium border-b-2 transition ${
+                                activeTab === "api"
+                                    ? "border-indigo-500 text-indigo-400 font-semibold"
+                                    : "border-transparent text-zinc-400 hover:text-zinc-200"
+                            }`}
+                        >
+                            Figma REST API
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setActiveTab("json"); setLocalError(null); }}
+                            className={`px-4 py-2 text-xs font-medium border-b-2 transition ${
+                                activeTab === "json"
+                                    ? "border-indigo-500 text-indigo-400 font-semibold"
+                                    : "border-transparent text-zinc-400 hover:text-zinc-200"
+                            }`}
+                        >
+                            Plugin JSON Ingestion
+                        </button>
                     </div>
 
-                    <div className="space-y-1.5">
-                        <label className="block text-xs font-medium text-zinc-300">
-                            Figma Frame URL or File Key
-                        </label>
-                        <input
-                            type="text"
-                            value={figmaUrl}
-                            onChange={(e) => setFigmaUrl(e.target.value)}
-                            disabled={isImporting}
-                            placeholder="https://www.figma.com/design/KEY/Project?node-id=1-2"
-                            className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3.5 py-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition disabled:opacity-50 font-mono"
-                        />
-                        {parsedInfo?.fileKey && (
-                            <div className="flex items-center gap-2 pt-1 text-[11px] text-zinc-400">
-                                <span className="bg-zinc-800 px-2 py-0.5 rounded text-zinc-300 font-mono">
-                                    Key: {parsedInfo.fileKey}
-                                </span>
-                                {parsedInfo.nodeId && (
-                                    <span className="bg-indigo-950/60 text-indigo-300 border border-indigo-800/40 px-2 py-0.5 rounded font-mono">
-                                        Node: {parsedInfo.nodeId}
-                                    </span>
+                    {activeTab === "api" ? (
+                        <>
+                            <div className="space-y-1.5">
+                                <label className="block text-xs font-medium text-zinc-300">
+                                    Personal Access Token (PAT)
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type={showToken ? "text" : "password"}
+                                        value={figmaToken}
+                                        onChange={(e) => setFigmaToken(e.target.value)}
+                                        disabled={isImporting}
+                                        placeholder="figd_..."
+                                        className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3.5 py-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition disabled:opacity-50 pr-10 font-mono"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowToken(!showToken)}
+                                        disabled={isImporting}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 text-xs p-1"
+                                    >
+                                        {showToken ? "Hide" : "Show"}
+                                    </button>
+                                </div>
+                                <p className="text-[11px] text-zinc-500">
+                                    Generate in Figma &rarr; Settings &rarr; Security &rarr; Personal Access Tokens
+                                </p>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="block text-xs font-medium text-zinc-300">
+                                    Figma Frame URL or File Key
+                                </label>
+                                <input
+                                    type="text"
+                                    value={figmaUrl}
+                                    onChange={(e) => setFigmaUrl(e.target.value)}
+                                    disabled={isImporting}
+                                    placeholder="https://www.figma.com/design/KEY/Project?node-id=1-2"
+                                    className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3.5 py-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition disabled:opacity-50 font-mono"
+                                />
+                                {parsedInfo?.fileKey && (
+                                    <div className="flex items-center gap-2 pt-1 text-[11px] text-zinc-400">
+                                        <span className="bg-zinc-800 px-2 py-0.5 rounded text-zinc-300 font-mono">
+                                            Key: {parsedInfo.fileKey}
+                                        </span>
+                                        {parsedInfo.nodeId && (
+                                            <span className="bg-indigo-950/60 text-indigo-300 border border-indigo-800/40 px-2 py-0.5 rounded font-mono">
+                                                Node: {parsedInfo.nodeId}
+                                            </span>
+                                        )}
+                                    </div>
                                 )}
                             </div>
-                        )}
-                    </div>
+                        </>
+                    ) : (
+                        <div className="space-y-2">
+                            <label className="block text-xs font-medium text-zinc-300">
+                                Paste Figma Plugin Export JSON
+                            </label>
+                            <textarea
+                                value={pluginJson}
+                                onChange={(e) => setPluginJson(e.target.value)}
+                                disabled={isImporting}
+                                placeholder='{"id": "0:1", "name": "Frame", "type": "FRAME", "layoutMode": "HORIZONTAL", ...}'
+                                rows={8}
+                                className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3.5 py-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition disabled:opacity-50 font-mono resize-none"
+                            />
+                            <p className="text-[11px] text-zinc-500">
+                                Supports direct Figma node trees, AutoLayout containers, or JSON exported by Ruxel Figma plugin.
+                            </p>
+                        </div>
+                    )}
 
                     {isImporting && (
                         <div className="bg-zinc-950/80 border border-zinc-800 rounded-lg p-4 space-y-3">
@@ -474,7 +537,12 @@ export const FigmaImportModal: FC<FigmaImportModalProps> = ({
                         <button
                             type="button"
                             onClick={handleSubmit}
-                            disabled={isImporting || !figmaToken.trim() || !figmaUrl.trim()}
+                            disabled={
+                                isImporting ||
+                                (activeTab === "api"
+                                    ? !figmaToken.trim() || !figmaUrl.trim()
+                                    : !pluginJson.trim())
+                            }
                             className="px-5 py-2 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition disabled:opacity-40 disabled:hover:bg-indigo-600 flex items-center gap-2 shadow-lg shadow-indigo-600/20"
                         >
                             {isImporting ? (

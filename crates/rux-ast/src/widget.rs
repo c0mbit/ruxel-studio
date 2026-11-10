@@ -48,6 +48,10 @@ pub enum WidgetType {
     Canvas3D,
     Image,
     CustomComponent,
+    #[serde(rename = "conditional_node")]
+    ConditionalNode,
+    #[serde(rename = "generic_widget")]
+    GenericWidget,
 }
 
 impl WidgetType {
@@ -66,6 +70,8 @@ impl WidgetType {
                 | Self::MenuBar
                 | Self::Menu
                 | Self::TreeView
+                | Self::ConditionalNode
+                | Self::GenericWidget
         )
     }
 
@@ -114,21 +120,16 @@ pub enum AnimationTrigger {
     StateChange,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InterpolationCurve {
     Linear,
+    #[default]
     EaseInOut,
     EaseIn,
     EaseOut,
     Spring,
     Bounce,
-}
-
-impl Default for InterpolationCurve {
-    fn default() -> Self {
-        Self::EaseInOut
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -166,6 +167,198 @@ pub struct AnimationDefinition {
     pub auto_reverse: Option<bool>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PropertyValue {
+    Static(String),
+    Binding(String),
+}
+
+impl Default for PropertyValue {
+    fn default() -> Self {
+        PropertyValue::Static(String::new())
+    }
+}
+
+impl PropertyValue {
+    pub fn as_str(&self) -> &str {
+        match self {
+            PropertyValue::Static(s) => s.as_str(),
+            PropertyValue::Binding(s) => s.as_str(),
+        }
+    }
+
+    pub fn is_binding(&self) -> bool {
+        matches!(self, PropertyValue::Binding(_))
+    }
+
+    pub fn is_static(&self) -> bool {
+        matches!(self, PropertyValue::Static(_))
+    }
+}
+
+impl std::ops::Deref for PropertyValue {
+    type Target = str;
+    fn deref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl std::fmt::Display for PropertyValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl From<&str> for PropertyValue {
+    fn from(s: &str) -> Self {
+        PropertyValue::Static(s.to_string())
+    }
+}
+
+impl From<String> for PropertyValue {
+    fn from(s: String) -> Self {
+        PropertyValue::Static(s)
+    }
+}
+
+impl PartialEq<&str> for PropertyValue {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<str> for PropertyValue {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<String> for PropertyValue {
+    fn eq(&self, other: &String) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl PartialEq<PropertyValue> for &str {
+    fn eq(&self, other: &PropertyValue) -> bool {
+        *self == other.as_str()
+    }
+}
+
+impl PartialEq<PropertyValue> for String {
+    fn eq(&self, other: &PropertyValue) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Serialize for PropertyValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+        match self {
+            PropertyValue::Static(s) => {
+                let mut map = serializer.serialize_map(Some(2))?;
+                map.serialize_entry("type", "static")?;
+                map.serialize_entry("value", s)?;
+                map.end()
+            }
+            PropertyValue::Binding(s) => {
+                let mut map = serializer.serialize_map(Some(2))?;
+                map.serialize_entry("type", "binding")?;
+                map.serialize_entry("value", s)?;
+                map.end()
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PropertyValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, MapAccess, Visitor};
+
+        struct PropertyValueVisitor;
+
+        impl<'de> Visitor<'de> for PropertyValueVisitor {
+            type Value = PropertyValue;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string, or a map with 'type'/'kind' and 'value', or 'binding'/'static'")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(PropertyValue::Static(v.to_string()))
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(PropertyValue::Static(v))
+            }
+
+            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut type_field: Option<String> = None;
+                let mut value_field: Option<String> = None;
+                let mut binding_field: Option<String> = None;
+                let mut static_field: Option<String> = None;
+
+                while let Some(key) = access.next_key::<String>()? {
+                    match key.as_str() {
+                        "type" | "kind" => {
+                            type_field = Some(access.next_value()?);
+                        }
+                        "value" => {
+                            value_field = Some(access.next_value()?);
+                        }
+                        "binding" => {
+                            binding_field = Some(access.next_value()?);
+                        }
+                        "static" => {
+                            static_field = Some(access.next_value()?);
+                        }
+                        _ => {
+                            let _: serde_json::Value = access.next_value()?;
+                        }
+                    }
+                }
+
+                if let Some(b) = binding_field {
+                    return Ok(PropertyValue::Binding(b));
+                }
+                if let Some(s) = static_field {
+                    return Ok(PropertyValue::Static(s));
+                }
+
+                if let Some(kind) = type_field {
+                    let val = value_field.unwrap_or_default();
+                    if kind == "binding" {
+                        Ok(PropertyValue::Binding(val))
+                    } else {
+                        Ok(PropertyValue::Static(val))
+                    }
+                } else if let Some(val) = value_field {
+                    Ok(PropertyValue::Static(val))
+                } else {
+                    Ok(PropertyValue::Static(String::new()))
+                }
+            }
+        }
+
+        deserializer.deserialize_any(PropertyValueVisitor)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct WidgetProperties {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -181,9 +374,9 @@ pub struct WidgetProperties {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shadow_ref: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
+    pub text: Option<PropertyValue>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub placeholder: Option<String>,
+    pub placeholder: Option<PropertyValue>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font_alias: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -253,11 +446,29 @@ pub struct WidgetProperties {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub condition: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_args: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub aria_label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aria_role: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aria_description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spacing: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub padding: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_width: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_height: Option<bool>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub custom_properties: BTreeMap<String, serde_json::Value>,
 }

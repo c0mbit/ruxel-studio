@@ -1,4 +1,5 @@
 mod compiler;
+pub mod telemetry;
 mod watcher;
 
 use std::collections::HashMap;
@@ -13,12 +14,14 @@ use std::time::Duration;
 
 use compiler::{WasmBuildResult, WasmCompiler, WasmPreviewStatus};
 
+use base64::prelude::*;
 use rux_ast::document::RuxDocument;
 use rux_ast::validator::DocumentValidator;
 use rux_codegen::reverse_parser::{PropertyPatch, ReverseParser};
 use rux_codegen::{
     CodegenDiagnostic, CodegenOptions, GeneratedFile, PluginRegistry, TargetFramework,
 };
+use rux_sync_server::CrdtSession;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -153,10 +156,13 @@ struct DaemonReverseParseParams {
 
 #[derive(Debug, Deserialize)]
 struct DaemonImportFigmaParams {
+    #[serde(default)]
     figma_token: String,
+    #[serde(default)]
     file_key: String,
     node_id: Option<String>,
     project_dir: Option<String>,
+    figma_json: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -231,16 +237,21 @@ struct AppContext {
     watch_targets: Mutex<HashMap<PathBuf, WatchTargetState>>,
     stdout_lock: Arc<Mutex<io::Stdout>>,
     wasm_compiler: Arc<WasmCompiler>,
+    crdt_session: Mutex<Option<CrdtSession>>,
+    pub telemetry: Arc<telemetry::TelemetryConfigManager>,
 }
 
 impl AppContext {
     fn new(stdout_lock: Arc<Mutex<io::Stdout>>) -> Arc<Self> {
         let wasm_compiler = Arc::new(WasmCompiler::new().expect("Wasm compiler server init"));
+        let telemetry = telemetry::TelemetryConfigManager::new(None, None);
         Arc::new(Self {
             watcher: Mutex::new(None),
             watch_targets: Mutex::new(HashMap::new()),
             stdout_lock,
             wasm_compiler,
+            crdt_session: Mutex::new(None),
+            telemetry,
         })
     }
 
@@ -264,7 +275,7 @@ impl AppContext {
     }
 
     fn handle_settled_file(&self, event: SettledFileEvent) {
-        if event.filename != "ui_generated.rs" {
+        if event.filename != "ui_generated.rs" && !event.filename.ends_with(".slint") {
             return;
         }
 
@@ -291,10 +302,20 @@ impl AppContext {
         });
 
         let (rux_path_opt, framework) = if let Some((_, target_state)) = matched_target {
-            (target_state.rux_path.clone(), target_state.framework)
+            let fw = if event.filename.ends_with(".slint") {
+                TargetFramework::Slint
+            } else {
+                target_state.framework
+            };
+            (target_state.rux_path.clone(), fw)
         } else {
             let candidate_rux = find_rux_in_dir(file_dir);
-            (candidate_rux, TargetFramework::Iced)
+            let fw = if event.filename.ends_with(".slint") {
+                TargetFramework::Slint
+            } else {
+                TargetFramework::Iced
+            };
+            (candidate_rux, fw)
         };
 
         let resolved_rux_path = match rux_path_opt {
@@ -312,7 +333,12 @@ impl AppContext {
             Err(_) => return,
         };
 
-        let report = match ReverseParser::patch_document(&mut doc, &code, Some(framework)) {
+        let report = match telemetry::catch_and_report(
+            &self.telemetry,
+            Some(framework.id()),
+            &code,
+            || ReverseParser::patch_document(&mut doc, &code, Some(framework)),
+        ) {
             Ok(r) => r,
             Err(err) => {
                 let notif_params = serde_json::json!({
@@ -535,8 +561,19 @@ fn handle_export_code(
         None
     };
 
+    let ui_filename = framework.default_ui_filename();
+    let ui_path_candidate = out_dir.join(ui_filename);
+    let existing_ui = if ui_path_candidate.exists() {
+        fs::read_to_string(&ui_path_candidate).ok()
+    } else {
+        None
+    };
+
     let registry = PluginRegistry::new();
-    let options = CodegenOptions::default();
+    let options = CodegenOptions {
+        existing_ui_code: existing_ui,
+        ..Default::default()
+    };
     let output = registry
         .generate(
             framework,
@@ -681,6 +718,7 @@ fn handle_unwatch_target(
 }
 
 fn handle_reverse_parse(
+    ctx: &Arc<AppContext>,
     params: Option<Value>,
 ) -> Result<DaemonReverseParseResult, (i32, String)> {
     let raw_params =
@@ -696,13 +734,64 @@ fn handle_reverse_parse(
         .as_deref()
         .and_then(TargetFramework::from_str_loose);
 
-    let report = ReverseParser::patch_document(&mut doc, &parse_params.code, framework)
-        .map_err(|e| (-32603, format!("Reverse parsing error: {}", e)))?;
+    let report = telemetry::catch_and_report(
+        &ctx.telemetry,
+        parse_params.target_framework.as_deref(),
+        &parse_params.code,
+        || ReverseParser::patch_document(&mut doc, &parse_params.code, framework),
+    )
+    .map_err(|e| (-32603, format!("Reverse parsing error: {}", e)))?;
 
     Ok(DaemonReverseParseResult {
         document: doc,
         patches_count: report.patched_nodes_count,
         patches: report.patches,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct SetTelemetryOptInParams {
+    enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct SetTelemetryOptInResult {
+    success: bool,
+    enabled: bool,
+}
+
+fn handle_set_telemetry_opt_in(
+    ctx: &Arc<AppContext>,
+    params: Option<Value>,
+) -> Result<SetTelemetryOptInResult, (i32, String)> {
+    let raw_params = params.ok_or((-32602, "Missing params for rux/setTelemetryOptIn".to_string()))?;
+    let opt_params: SetTelemetryOptInParams = serde_json::from_value(raw_params)
+        .map_err(|e| (-32602, format!("Invalid params for rux/setTelemetryOptIn: {}", e)))?;
+    ctx.telemetry
+        .set_opt_in(opt_params.enabled)
+        .map_err(|e| (-32603, format!("Failed to save telemetry state: {}", e)))?;
+    Ok(SetTelemetryOptInResult {
+        success: true,
+        enabled: opt_params.enabled,
+    })
+}
+
+#[derive(Debug, Serialize)]
+struct TelemetryStatusResult {
+    enabled: bool,
+    client_id: String,
+    session_id: String,
+    log_path: String,
+    reports_recorded: usize,
+}
+
+fn handle_telemetry_status(ctx: &Arc<AppContext>) -> Result<TelemetryStatusResult, (i32, String)> {
+    Ok(TelemetryStatusResult {
+        enabled: ctx.telemetry.is_enabled(),
+        client_id: ctx.telemetry.client_id(),
+        session_id: ctx.telemetry.session_id().to_string(),
+        log_path: ctx.telemetry.log_path().to_string_lossy().to_string(),
+        reports_recorded: ctx.telemetry.reports_recorded_count(),
     })
 }
 
@@ -715,23 +804,182 @@ fn handle_import_figma(
         .map_err(|e| (-32602, format!("Invalid params for rux/importFigma: {}", e)))?;
 
     let engine = rux_figma::FigmaEngine::new();
-    let project_dir_buf = import_params.project_dir.as_deref().map(PathBuf::from);
 
-    let result = engine
-        .import(rux_figma::FigmaImportEngineParams {
-            token: import_params.figma_token,
-            file_key_or_url: &import_params.file_key,
-            node_id: import_params.node_id.as_deref(),
-            project_dir: project_dir_buf.as_deref(),
-            custom_transport: None,
-        })
-        .map_err(|e| (-32603, format!("Figma import failed: {}", e)))?;
+    let result = if let Some(ref json_str) = import_params.figma_json {
+        engine
+            .import_from_json(json_str)
+            .map_err(|e| (-32603, format!("Figma JSON import failed: {}", e)))?
+    } else if import_params.figma_token.is_empty() && (import_params.file_key.trim_start().starts_with('{') || import_params.file_key.trim_start().starts_with('[')) {
+        engine
+            .import_from_json(&import_params.file_key)
+            .map_err(|e| (-32603, format!("Figma JSON import failed: {}", e)))?
+    } else {
+        let project_dir_buf = import_params.project_dir.as_deref().map(PathBuf::from);
+        engine
+            .import(rux_figma::FigmaImportEngineParams {
+                token: import_params.figma_token,
+                file_key_or_url: &import_params.file_key,
+                node_id: import_params.node_id.as_deref(),
+                project_dir: project_dir_buf.as_deref(),
+                custom_transport: None,
+            })
+            .map_err(|e| (-32603, format!("Figma import failed: {}", e)))?
+    };
 
     Ok(DaemonImportFigmaResult {
         document: result.document,
         imported_node_count: result.imported_node_count,
         assets_downloaded: result.assets_downloaded,
         warnings: result.warnings,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct DaemonPatchMultiFileParams {
+    content: String,
+    base_dir: String,
+    widget_id: String,
+    property_name: String,
+    new_value: Value,
+    target_framework: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct DaemonPatchMultiFileResult {
+    target_file: String,
+    patched_source: String,
+    widget_id: String,
+    property_name: String,
+    applied_cleanly: bool,
+}
+
+fn handle_patch_multi_file(
+    params: Option<Value>,
+) -> Result<DaemonPatchMultiFileResult, (i32, String)> {
+    let raw_params = params.ok_or((-32602, "Missing params for rux/patchMultiFile".to_string()))?;
+    let patch_params: DaemonPatchMultiFileParams = serde_json::from_value(raw_params)
+        .map_err(|e| (-32602, format!("Invalid params for rux/patchMultiFile: {}", e)))?;
+
+    let doc = RuxDocument::from_json(&patch_params.content)
+        .map_err(|e| (-32602, format!("Invalid RUX document JSON: {}", e)))?;
+
+    let framework = patch_params
+        .target_framework
+        .as_deref()
+        .and_then(TargetFramework::from_str_loose)
+        .unwrap_or(TargetFramework::Iced);
+
+    let prop_value = if let Ok(pv) = serde_json::from_value::<rux_ast::widget::PropertyValue>(patch_params.new_value.clone()) {
+        pv
+    } else if let Some(s) = patch_params.new_value.as_str() {
+        rux_ast::widget::PropertyValue::Static(s.to_string())
+    } else {
+        rux_ast::widget::PropertyValue::Static(patch_params.new_value.to_string())
+    };
+
+    let report = rux_codegen::patcher::AstPatcher::patch_multi_file(
+        Path::new(&patch_params.base_dir),
+        &doc,
+        &patch_params.widget_id,
+        &patch_params.property_name,
+        &prop_value,
+        framework,
+    )
+    .map_err(|e| (-32603, format!("Multi-file patch error: {}", e)))?;
+
+    if let Err(e) = fs::write(&report.target_file, &report.patched_source) {
+        return Err((-32603, format!("Failed to write patched component file: {}", e)));
+    }
+
+    Ok(DaemonPatchMultiFileResult {
+        target_file: report.target_file.to_string_lossy().to_string(),
+        patched_source: report.patched_source,
+        widget_id: report.widget_id,
+        property_name: report.property_name,
+        applied_cleanly: report.applied_cleanly,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct DaemonCrdtSyncParams {
+    state_vector: Option<String>,
+    document: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct DaemonCrdtSyncResult {
+    update: String,
+    state_vector: String,
+}
+
+fn handle_crdt_sync(
+    ctx: &Arc<AppContext>,
+    params: Option<Value>,
+) -> Result<DaemonCrdtSyncResult, (i32, String)> {
+    let raw_params = params.unwrap_or(Value::Null);
+    let sync_params: DaemonCrdtSyncParams = serde_json::from_value(raw_params)
+        .unwrap_or(DaemonCrdtSyncParams { state_vector: None, document: None });
+
+    let mut guard = ctx.crdt_session.lock().map_err(|e| (-32603, e.to_string()))?;
+    let crdt = guard.get_or_insert_with(CrdtSession::new);
+
+    if let Some(doc_json) = &sync_params.document {
+        if let Ok(doc) = RuxDocument::from_json(doc_json) {
+            let _ = crdt.set_ast_document(&doc);
+        }
+    }
+
+    let remote_sv_bytes = match sync_params.state_vector {
+        Some(b64) => BASE64_STANDARD.decode(b64.as_bytes()).unwrap_or_default(),
+        None => Vec::new(),
+    };
+
+    let diff_bytes = crdt.encode_diff_v1(&remote_sv_bytes)
+        .map_err(|e| (-32603, e))?;
+    let server_sv = crdt.state_vector_v1();
+
+    Ok(DaemonCrdtSyncResult {
+        update: BASE64_STANDARD.encode(diff_bytes),
+        state_vector: BASE64_STANDARD.encode(server_sv),
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct DaemonCrdtApplyDeltaParams {
+    delta: String,
+}
+
+#[derive(Debug, Serialize)]
+struct DaemonCrdtApplyDeltaResult {
+    success: bool,
+    state_vector: String,
+    document: Option<RuxDocument>,
+}
+
+fn handle_crdt_apply_delta(
+    ctx: &Arc<AppContext>,
+    params: Option<Value>,
+) -> Result<DaemonCrdtApplyDeltaResult, (i32, String)> {
+    let raw_params = params.ok_or((-32602, "Missing params for rux/crdtApplyDelta".to_string()))?;
+    let delta_params: DaemonCrdtApplyDeltaParams = serde_json::from_value(raw_params)
+        .map_err(|e| (-32602, format!("Invalid params for rux/crdtApplyDelta: {}", e)))?;
+
+    let delta_bytes = BASE64_STANDARD.decode(delta_params.delta.as_bytes())
+        .map_err(|e| (-32602, format!("Invalid base64 delta: {}", e)))?;
+
+    let mut guard = ctx.crdt_session.lock().map_err(|e| (-32603, e.to_string()))?;
+    let crdt = guard.get_or_insert_with(CrdtSession::new);
+
+    crdt.apply_update_v1(&delta_bytes)
+        .map_err(|e| (-32603, format!("Failed to apply CRDT delta: {}", e)))?;
+
+    let server_sv = crdt.state_vector_v1();
+    let doc_opt = crdt.get_ast_document().ok();
+
+    Ok(DaemonCrdtApplyDeltaResult {
+        success: true,
+        state_vector: BASE64_STANDARD.encode(server_sv),
+        document: doc_opt,
     })
 }
 
@@ -1207,7 +1455,55 @@ fn process_json_rpc_line(ctx: &Arc<AppContext>, line: &str) -> Option<String> {
                 serde_json::to_string(&resp).ok()
             }
         },
-        "rux/reverseParse" => match handle_reverse_parse(request.params) {
+        "rux/reverseParse" => match handle_reverse_parse(ctx, request.params) {
+            Ok(result) => {
+                let resp = JsonRpcResponse {
+                    jsonrpc: "2.0",
+                    id: request_id,
+                    result: Some(result),
+                    error: None,
+                };
+                serde_json::to_string(&resp).ok()
+            }
+            Err((code, message)) => {
+                let resp: JsonRpcResponse<Value> = JsonRpcResponse {
+                    jsonrpc: "2.0",
+                    id: request_id,
+                    result: None,
+                    error: Some(JsonRpcErrorResponse {
+                        code,
+                        message,
+                        data: None,
+                    }),
+                };
+                serde_json::to_string(&resp).ok()
+            }
+        },
+        "rux/setTelemetryOptIn" => match handle_set_telemetry_opt_in(ctx, request.params) {
+            Ok(result) => {
+                let resp = JsonRpcResponse {
+                    jsonrpc: "2.0",
+                    id: request_id,
+                    result: Some(result),
+                    error: None,
+                };
+                serde_json::to_string(&resp).ok()
+            }
+            Err((code, message)) => {
+                let resp: JsonRpcResponse<Value> = JsonRpcResponse {
+                    jsonrpc: "2.0",
+                    id: request_id,
+                    result: None,
+                    error: Some(JsonRpcErrorResponse {
+                        code,
+                        message,
+                        data: None,
+                    }),
+                };
+                serde_json::to_string(&resp).ok()
+            }
+        },
+        "rux/telemetryStatus" => match handle_telemetry_status(ctx) {
             Ok(result) => {
                 let resp = JsonRpcResponse {
                     jsonrpc: "2.0",
@@ -1232,6 +1528,78 @@ fn process_json_rpc_line(ctx: &Arc<AppContext>, line: &str) -> Option<String> {
             }
         },
         "rux/importFigma" => match handle_import_figma(request.params) {
+            Ok(result) => {
+                let resp = JsonRpcResponse {
+                    jsonrpc: "2.0",
+                    id: request_id,
+                    result: Some(result),
+                    error: None,
+                };
+                serde_json::to_string(&resp).ok()
+            }
+            Err((code, message)) => {
+                let resp: JsonRpcResponse<Value> = JsonRpcResponse {
+                    jsonrpc: "2.0",
+                    id: request_id,
+                    result: None,
+                    error: Some(JsonRpcErrorResponse {
+                        code,
+                        message,
+                        data: None,
+                    }),
+                };
+                serde_json::to_string(&resp).ok()
+            }
+        },
+        "rux/patchMultiFile" => match handle_patch_multi_file(request.params) {
+            Ok(result) => {
+                let resp = JsonRpcResponse {
+                    jsonrpc: "2.0",
+                    id: request_id,
+                    result: Some(result),
+                    error: None,
+                };
+                serde_json::to_string(&resp).ok()
+            }
+            Err((code, message)) => {
+                let resp: JsonRpcResponse<Value> = JsonRpcResponse {
+                    jsonrpc: "2.0",
+                    id: request_id,
+                    result: None,
+                    error: Some(JsonRpcErrorResponse {
+                        code,
+                        message,
+                        data: None,
+                    }),
+                };
+                serde_json::to_string(&resp).ok()
+            }
+        },
+        "rux/crdtSync" => match handle_crdt_sync(ctx, request.params) {
+            Ok(result) => {
+                let resp = JsonRpcResponse {
+                    jsonrpc: "2.0",
+                    id: request_id,
+                    result: Some(result),
+                    error: None,
+                };
+                serde_json::to_string(&resp).ok()
+            }
+            Err((code, message)) => {
+                let resp: JsonRpcResponse<Value> = JsonRpcResponse {
+                    jsonrpc: "2.0",
+                    id: request_id,
+                    result: None,
+                    error: Some(JsonRpcErrorResponse {
+                        code,
+                        message,
+                        data: None,
+                    }),
+                };
+                serde_json::to_string(&resp).ok()
+            }
+        },
+        "rux/crdtApplyDelta" => match handle_crdt_apply_delta(ctx, request.params) {
             Ok(result) => {
                 let resp = JsonRpcResponse {
                     jsonrpc: "2.0",
@@ -1694,6 +2062,36 @@ mod tests {
         let val: Value = serde_json::from_str(&response).expect("valid json");
         let frameworks = val["result"]["frameworks"].as_array().expect("frameworks array");
         assert_eq!(frameworks.len(), 6);
+    }
+
+    #[test]
+    fn test_telemetry_opt_in_json_rpc() {
+        let ctx = create_test_context();
+        // Check initial state
+        assert!(!ctx.telemetry.is_enabled());
+
+        // Opt in via JSON-RPC
+        let req = r#"{"jsonrpc":"2.0","id":9,"method":"rux/setTelemetryOptIn","params":{"enabled":true}}"#;
+        let response = process_json_rpc_line(&ctx, req).expect("response");
+        let val: Value = serde_json::from_str(&response).expect("valid json");
+        assert_eq!(val["result"]["success"], true);
+        assert_eq!(val["result"]["enabled"], true);
+        assert!(ctx.telemetry.is_enabled());
+
+        // Query status via JSON-RPC
+        let req_status = r#"{"jsonrpc":"2.0","id":10,"method":"rux/telemetryStatus"}"#;
+        let response_status = process_json_rpc_line(&ctx, req_status).expect("response");
+        let val_status: Value = serde_json::from_str(&response_status).expect("valid json");
+        assert_eq!(val_status["result"]["enabled"], true);
+        assert!(!val_status["result"]["client_id"].as_str().unwrap().is_empty());
+        assert!(!val_status["result"]["session_id"].as_str().unwrap().is_empty());
+
+        // Opt out via JSON-RPC
+        let req_opt_out = r#"{"jsonrpc":"2.0","id":11,"method":"rux/setTelemetryOptIn","params":{"enabled":false}}"#;
+        let response_out = process_json_rpc_line(&ctx, req_opt_out).expect("response");
+        let val_out: Value = serde_json::from_str(&response_out).expect("valid json");
+        assert_eq!(val_out["result"]["enabled"], false);
+        assert!(!ctx.telemetry.is_enabled());
     }
 
     #[test]

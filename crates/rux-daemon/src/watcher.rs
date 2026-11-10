@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -23,7 +23,7 @@ pub struct DebouncedFileWatcher {
 
 fn is_monitored_file(path: &Path) -> bool {
     if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
-        matches!(
+        if matches!(
             file_name,
             "ui_generated.rs"
                 | "controller.rs"
@@ -32,10 +32,19 @@ fn is_monitored_file(path: &Path) -> bool {
                 | "ui_generated.py"
                 | "controller.py"
                 | "ui_generated.slint"
-        )
-    } else {
-        false
+        ) {
+            return true;
+        }
+
+        // Support multi-file architecture: monitor .rs and .slint files inside components directories
+        let in_components = path.ancestors().any(|p| {
+            p.file_name().and_then(|s| s.to_str()) == Some("components")
+        });
+        if in_components && (file_name.ends_with(".rs") || file_name.ends_with(".slint")) {
+            return true;
+        }
     }
+    false
 }
 
 impl DebouncedFileWatcher {
@@ -43,12 +52,20 @@ impl DebouncedFileWatcher {
     where
         F: Fn(SettledFileEvent) + Send + Sync + 'static,
     {
-        let (raw_sender, raw_receiver): (Sender<notify::Result<Event>>, Receiver<notify::Result<Event>>) =
-            channel();
+        let (raw_sender, raw_receiver): (SyncSender<notify::Result<Event>>, Receiver<notify::Result<Event>>) =
+            sync_channel(512);
 
         let watcher = RecommendedWatcher::new(
-            move |res| {
-                let _ = raw_sender.send(res);
+            move |res: notify::Result<Event>| {
+                // Immediate pre-filtering: discard unmonitored files to prevent channel buffer bloat
+                if let Ok(ref event) = res {
+                    let has_monitored = event.paths.iter().any(|p| is_monitored_file(p));
+                    if !has_monitored {
+                        return;
+                    }
+                }
+                // Apply backpressure: if bounded channel is saturated, drop event rather than allocating unboundedly
+                let _ = raw_sender.try_send(res);
             },
             Config::default(),
         )?;
@@ -59,7 +76,7 @@ impl DebouncedFileWatcher {
         let callback = Arc::new(on_settled);
 
         thread::spawn(move || {
-            let mut pending_modifications: HashMap<PathBuf, Instant> = HashMap::new();
+            let mut pending_modifications: HashMap<PathBuf, Instant> = HashMap::with_capacity(32);
 
             while !thread_stop.load(Ordering::SeqCst) {
                 while let Ok(event_res) = raw_receiver.try_recv() {
@@ -72,6 +89,16 @@ impl DebouncedFileWatcher {
                         if is_modify_or_create {
                             for path in event.paths {
                                 if is_monitored_file(&path) {
+                                    // Memory management: enforce bounded capacity on pending modifications map
+                                    if pending_modifications.len() >= 128 && !pending_modifications.contains_key(&path) {
+                                        if let Some(oldest_key) = pending_modifications
+                                            .iter()
+                                            .min_by_key(|(_, t)| *t)
+                                            .map(|(k, _)| k.clone())
+                                        {
+                                            pending_modifications.remove(&oldest_key);
+                                        }
+                                    }
                                     pending_modifications.insert(path, Instant::now());
                                 }
                             }

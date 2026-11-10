@@ -1,5 +1,8 @@
-import { FC, useEffect, useRef } from "react";
+import { FC, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import type {
+    FlexContainer,
+    GridContainer,
+    GridTrack,
     RuxDocument,
     ThemeConfig,
     WidgetNode,
@@ -8,13 +11,61 @@ import type {
 } from "@ruxel/shared-types";
 import { useEditorStore } from "../state/editorStore";
 import { useViewportStore } from "../state/viewportStore";
+import { useDocumentMutation } from "../hooks/useDocumentMutation";
+import {
+    validateWidgetTree,
+    type WidgetValidationError,
+} from "../utils/schemaValidator";
+import { WidgetErrorBoundary } from "../components/WidgetErrorBoundary";
+import { GenericWidgetPlaceholder } from "./GenericWidgetPlaceholder";
+import { WidgetLayoutHandles } from "./WidgetLayoutHandles";
+import { ViewportResizeHandles } from "./ViewportResizeHandles";
+import {
+    insertChild,
+    moveNode,
+    isDescendant,
+    normalizeWidgetNode,
+} from "../utils/treeTraversal";
+import {
+    collectAllIds,
+    createDefaultWidgetNode,
+    getWidgetTypeLabel,
+    isContainerWidget,
+} from "../utils/widgetFactory";
 
 interface DomWidgetRendererProps {
     readonly document: RuxDocument;
+    readonly onDocumentChange?: (rawText: string, summary?: string) => void;
 }
 
-export const DomWidgetRenderer: FC<DomWidgetRendererProps> = ({ document }) => {
+function regenerateNodeIds(
+    node: WidgetNode,
+    existingIds: Set<string>
+): WidgetNode {
+    let base = node.id.replace(/_\d+$/, "");
+    let count = 1;
+    let newId = `${base}_${count}`;
+    while (existingIds.has(newId)) {
+        count++;
+        newId = `${base}_${count}`;
+    }
+    existingIds.add(newId);
+
+    return {
+        ...node,
+        id: newId,
+        children: node.children?.map((c) =>
+            regenerateNodeIds(c, existingIds)
+        ),
+    };
+}
+
+export const DomWidgetRenderer: FC<DomWidgetRendererProps> = ({
+    document,
+    onDocumentChange,
+}) => {
     const windowContainerRef = useRef<HTMLDivElement>(null);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
     const camera = useViewportStore((state) => state.camera);
     const registerNodeBounds = useViewportStore(
         (state) => state.registerNodeBounds
@@ -23,11 +74,23 @@ export const DomWidgetRenderer: FC<DomWidgetRendererProps> = ({ document }) => {
         (state) => state.setHoveredNodeId
     );
     const selectedNodeId = useEditorStore((state) => state.selectedNodeId);
+    const setSelectedNodeId = useEditorStore((state) => state.setSelectedNodeId);
+
+    const deviceMode = useViewportStore((state) => state.deviceMode);
+    const effectiveDimensions = useViewportStore((state) =>
+        state.getEffectiveDimensions()
+    );
+
+    const [dragOverContainerId, setDragOverContainerId] = useState<string | null>(null);
+
+    const { executeNodeMutation } = useDocumentMutation(onDocumentChange);
+    const validationMap = useMemo(() => validateWidgetTree(document.root), [document.root]);
 
     const { window: winConfig, root, theme } = document;
 
     useEffect(() => {
         const container = windowContainerRef.current;
+        const scrollContainer = scrollContainerRef.current;
         if (!container) {
             return;
         }
@@ -70,10 +133,18 @@ export const DomWidgetRenderer: FC<DomWidgetRendererProps> = ({ document }) => {
         });
 
         observer.observe(container);
+        if (scrollContainer) {
+            observer.observe(scrollContainer);
+            scrollContainer.addEventListener("scroll", updateAllBounds, { passive: true });
+        }
+
         return () => {
             observer.disconnect();
+            if (scrollContainer) {
+                scrollContainer.removeEventListener("scroll", updateAllBounds);
+            }
         };
-    }, [document, camera, registerNodeBounds]);
+    }, [document, camera, effectiveDimensions, registerNodeBounds]);
 
     const activePalette =
         theme.color_palettes[
@@ -90,14 +161,28 @@ export const DomWidgetRenderer: FC<DomWidgetRendererProps> = ({ document }) => {
         >
             <div
                 ref={windowContainerRef}
+                data-testid="viewport-device-frame"
+                data-device-mode={deviceMode}
                 style={{
-                    width: `${winConfig.initial_width}px`,
-                    height: `${winConfig.initial_height}px`,
+                    width: `${effectiveDimensions.width}px`,
+                    height: `${effectiveDimensions.height}px`,
                     backgroundColor: activePalette.background,
                     color: activePalette.on_background,
                 }}
-                className="relative shadow-2xl flex flex-col overflow-hidden border border-zinc-700/80 rounded-t-lg"
+                className={`relative shadow-2xl flex flex-col border border-zinc-700/80 rounded-t-lg transition-[width,height] duration-75 ${
+                    deviceMode === "mobile"
+                        ? "rounded-b-2xl border-zinc-600/90 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7)]"
+                        : ""
+                }`}
             >
+                {/* Draggable Viewport Frame Resize Handles for Custom Mode */}
+                {deviceMode === "responsive" && (
+                    <ViewportResizeHandles
+                        effectiveDimensions={effectiveDimensions}
+                        zoom={camera.zoom}
+                    />
+                )}
+
                 {winConfig.decorations && (
                     <header className="h-8 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between px-3 shrink-0 select-none">
                         <div className="flex items-center gap-2">
@@ -107,18 +192,35 @@ export const DomWidgetRenderer: FC<DomWidgetRendererProps> = ({ document }) => {
                             <span className="ml-2 text-xs font-medium text-zinc-300">
                                 {winConfig.title}
                             </span>
+                            {deviceMode !== "responsive" && (
+                                <span className="ml-1.5 px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 font-mono text-[10px] uppercase font-semibold">
+                                    {deviceMode}
+                                </span>
+                            )}
                         </div>
                         <span className="text-[10px] text-zinc-500 font-mono">
-                            {winConfig.initial_width} &times; {winConfig.initial_height}
+                            {effectiveDimensions.width} &times; {effectiveDimensions.height}
                         </span>
                     </header>
                 )}
 
-                <div className="flex-1 relative overflow-hidden flex flex-col">
+                {/* Device Simulated Scroll Area */}
+                <div
+                    ref={scrollContainerRef}
+                    data-testid="viewport-scroll-container"
+                    className="flex-1 relative overflow-y-auto overflow-x-hidden flex flex-col scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent"
+                >
                     <WidgetDomNode
                         node={root}
+                        rootNode={root}
                         selectedNodeId={selectedNodeId}
                         setHoveredNodeId={setHoveredNodeId}
+                        setSelectedNodeId={setSelectedNodeId}
+                        validationMap={validationMap}
+                        dragOverContainerId={dragOverContainerId}
+                        setDragOverContainerId={setDragOverContainerId}
+                        executeNodeMutation={executeNodeMutation}
+                        cameraZoom={camera.zoom}
                     />
                 </div>
             </div>
@@ -128,18 +230,41 @@ export const DomWidgetRenderer: FC<DomWidgetRendererProps> = ({ document }) => {
 
 interface WidgetDomNodeProps {
     readonly node: WidgetNode;
+    readonly rootNode: WidgetNode;
     readonly selectedNodeId: string | null;
     readonly setHoveredNodeId: (id: string | null) => void;
+    readonly setSelectedNodeId: (id: string | null) => void;
+    readonly validationMap: Map<string, WidgetValidationError[]>;
+    readonly dragOverContainerId: string | null;
+    readonly setDragOverContainerId: (id: string | null) => void;
+    readonly executeNodeMutation: (
+        description: string,
+        mutator: (root: WidgetNode) => WidgetNode
+    ) => void;
+    readonly cameraZoom: number;
 }
 
 const WidgetDomNode: FC<WidgetDomNodeProps> = ({
     node,
+    rootNode,
     selectedNodeId,
     setHoveredNodeId,
+    setSelectedNodeId,
+    validationMap,
+    dragOverContainerId,
+    setDragOverContainerId,
+    executeNodeMutation,
+    cameraZoom,
 }) => {
     const isSelected = node.id === selectedNodeId;
     const { id, widget_type, properties, layout, children } = node;
     const theme = useEditorStore((state) => state.document?.theme);
+    const resolvedAssets = useEditorStore((state) => state.resolvedAssets);
+
+    const isContainer = isContainerWidget(widget_type);
+    const isDropTarget = dragOverContainerId === id;
+    const errors = validationMap.get(id);
+    const hasErrors = errors && errors.length > 0;
 
     const style = computeNodeStyle(properties, layout, theme);
 
@@ -153,33 +278,212 @@ const WidgetDomNode: FC<WidgetDomNodeProps> = ({
         setHoveredNodeId(null);
     };
 
+    const handleContainerDragOver = useCallback(
+        (e: React.DragEvent) => {
+            if (!isContainer) return;
+            const hasTypes =
+                e.dataTransfer.types.includes("application/ruxel-widget-type") ||
+                e.dataTransfer.types.includes("application/ruxel-preset-json") ||
+                e.dataTransfer.types.includes("application/ruxel-tree-node-id");
+
+            if (hasTypes) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "copy";
+                setDragOverContainerId(id);
+            }
+        },
+        [isContainer, id, setDragOverContainerId]
+    );
+
+    const handleContainerDragEnter = useCallback(
+        (e: React.DragEvent) => {
+            if (!isContainer) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setDragOverContainerId(id);
+        },
+        [isContainer, id, setDragOverContainerId]
+    );
+
+    const handleContainerDragLeave = useCallback(
+        (e: React.DragEvent) => {
+            if (!isContainer) return;
+            e.stopPropagation();
+            if (e.currentTarget === e.target) {
+                setDragOverContainerId(null);
+            }
+        },
+        [isContainer, setDragOverContainerId]
+    );
+
+    const handleContainerDrop = useCallback(
+        (e: React.DragEvent) => {
+            if (!isContainer) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setDragOverContainerId(null);
+
+            const widgetType = e.dataTransfer.getData(
+                "application/ruxel-widget-type"
+            ) as WidgetType;
+            const presetJson = e.dataTransfer.getData(
+                "application/ruxel-preset-json"
+            );
+            const treeNodeId = e.dataTransfer.getData(
+                "application/ruxel-tree-node-id"
+            );
+
+            if (treeNodeId) {
+                if (treeNodeId !== id && !isDescendant(rootNode, treeNodeId, id)) {
+                    executeNodeMutation(`Move ${treeNodeId} into ${id}`, (root) =>
+                        moveNode(root, treeNodeId, id)
+                    );
+                    setSelectedNodeId(treeNodeId);
+                }
+                return;
+            }
+
+            const existingIds = collectAllIds(rootNode);
+
+            if (presetJson) {
+                try {
+                    const parsed = normalizeWidgetNode(
+                        JSON.parse(presetJson) as Record<string, unknown>
+                    );
+                    const freshNode = regenerateNodeIds(parsed, existingIds);
+                    executeNodeMutation(
+                        `Insert Preset into ${id}`,
+                        (root) => insertChild(root, id, freshNode)
+                    );
+                    setSelectedNodeId(freshNode.id);
+                } catch {
+                    // Ignore parse error
+                }
+            } else if (widgetType) {
+                const freshNode = createDefaultWidgetNode(widgetType, existingIds);
+                executeNodeMutation(
+                    `Insert ${getWidgetTypeLabel(widgetType)} into ${id}`,
+                    (root) => insertChild(root, id, freshNode)
+                );
+                setSelectedNodeId(freshNode.id);
+            }
+        },
+        [isContainer, id, rootNode, executeNodeMutation, setSelectedNodeId, setDragOverContainerId]
+    );
+
     return (
-        <div
-            data-node-id={id}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-            style={style}
-            className={`relative transition-shadow ${
-                isSelected ? "outline-none" : ""
-            } ${getContainerClasses(widget_type, layout)}`}
-        >
-            {renderWidgetContent(node, selectedNodeId, setHoveredNodeId, theme)}
-            {children &&
-                children.length > 0 &&
-                !isSpecialSlotContainer(widget_type) &&
-                children.map((child) => (
-                    <WidgetDomNode
-                        key={child.id}
-                        node={child}
-                        selectedNodeId={selectedNodeId}
-                        setHoveredNodeId={setHoveredNodeId}
+        <WidgetErrorBoundary nodeId={id}>
+            <div
+                data-node-id={id}
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={handleMouseLeave}
+                onDragOver={isContainer ? handleContainerDragOver : undefined}
+                onDragEnter={isContainer ? handleContainerDragEnter : undefined}
+                onDragLeave={isContainer ? handleContainerDragLeave : undefined}
+                onDrop={isContainer ? handleContainerDrop : undefined}
+                style={style}
+                className={`relative transition-all ${
+                    isSelected ? "outline-none" : ""
+                } ${
+                    isDropTarget
+                        ? "ring-2 ring-blue-500 shadow-[0_0_18px_rgba(59,130,246,0.6)] border-blue-400 bg-blue-500/10"
+                        : ""
+                } ${
+                    hasErrors
+                        ? "ring-2 ring-red-500/90 shadow-[0_0_12px_rgba(239,68,68,0.5)] border-red-500"
+                        : ""
+                } ${getContainerClasses(widget_type, layout)}`}
+            >
+                {/* Visual Drop Zone Indicator Badge */}
+                {isDropTarget && (
+                    <div className="absolute top-1 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded bg-blue-600 text-white font-mono text-[9px] font-semibold shadow-lg z-50 pointer-events-none flex items-center gap-1 border border-blue-400 whitespace-nowrap">
+                        <span>↳</span>
+                        <span>Drop into {getWidgetTypeLabel(widget_type)} (#{id})</span>
+                    </div>
+                )}
+
+                {/* Visual Validation Error Badge & Tooltip */}
+                {hasErrors && (
+                    <div
+                        className="group absolute -top-2.5 -right-2.5 z-40"
+                        title={errors.map((e) => e.message).join("\n")}
+                    >
+                        <span className="w-5 h-5 rounded-full bg-red-600 border border-red-300 text-white text-[11px] font-bold flex items-center justify-center shadow-md cursor-help">
+                            !
+                        </span>
+                        <div className="hidden group-hover:flex absolute right-0 top-6 px-2.5 py-1.5 rounded bg-zinc-950/95 border border-red-500 text-red-200 text-xs font-mono shadow-2xl z-50 whitespace-nowrap backdrop-blur-sm flex-col gap-0.5 pointer-events-none">
+                            <div className="text-[10px] text-red-400 font-bold uppercase tracking-wider">
+                                Validation Warning
+                            </div>
+                            {errors.map((err, i) => (
+                                <div key={i} className="text-zinc-200 text-[11px]">
+                                    • {err.message}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Visual Layout Handles for Selected Widget */}
+                {isSelected && (
+                    <WidgetLayoutHandles
+                        node={node}
+                        cameraZoom={cameraZoom}
+                        onLayoutChange={executeNodeMutation}
                     />
-                ))}
-            {isSpecialSlotContainer(widget_type) &&
-                renderSlotChildren(node, selectedNodeId, setHoveredNodeId)}
-        </div>
+                )}
+
+                {renderWidgetContent(node, selectedNodeId, setHoveredNodeId, theme, resolvedAssets)}
+
+                {children &&
+                    children.length > 0 &&
+                    !isSpecialSlotContainer(widget_type) &&
+                    children.map((child) => (
+                        <WidgetDomNode
+                            key={child.id}
+                            node={child}
+                            rootNode={rootNode}
+                            selectedNodeId={selectedNodeId}
+                            setHoveredNodeId={setHoveredNodeId}
+                            setSelectedNodeId={setSelectedNodeId}
+                            validationMap={validationMap}
+                            dragOverContainerId={dragOverContainerId}
+                            setDragOverContainerId={setDragOverContainerId}
+                            executeNodeMutation={executeNodeMutation}
+                            cameraZoom={cameraZoom}
+                        />
+                    ))}
+
+                {isSpecialSlotContainer(widget_type) &&
+                    renderSlotChildren(
+                        node,
+                        rootNode,
+                        selectedNodeId,
+                        setHoveredNodeId,
+                        setSelectedNodeId,
+                        validationMap,
+                        dragOverContainerId,
+                        setDragOverContainerId,
+                        executeNodeMutation,
+                        cameraZoom
+                    )}
+            </div>
+        </WidgetErrorBoundary>
     );
 };
+
+function resolvePropertyValue(prop?: unknown, fallback = ""): string {
+    if (prop === undefined || prop === null) return fallback;
+    if (typeof prop === "string") return prop;
+    if (typeof prop === "object") {
+        const obj = prop as Record<string, unknown>;
+        if ("value" in obj && typeof obj.value === "string") return obj.value;
+        if ("static" in obj && typeof obj.static === "string") return obj.static;
+        if ("binding" in obj && typeof obj.binding === "string") return obj.binding;
+    }
+    return String(prop);
+}
 
 function resolveColorToken(
     value?: string,
@@ -208,6 +512,39 @@ function resolveColorToken(
         }
     }
     return value;
+}
+
+function formatCssFlexAlign(val?: string): string | undefined {
+    if (!val) return undefined;
+    switch (val) {
+        case "flex_start":
+            return "flex-start";
+        case "flex_end":
+            return "flex-end";
+        case "space_between":
+            return "space-between";
+        case "space_around":
+            return "space-around";
+        case "space_evenly":
+            return "space-evenly";
+        default:
+            return val;
+    }
+}
+
+function formatGridTrack(track: GridTrack): string {
+    switch (track.unit) {
+        case "fixed":
+            return `${track.value}px`;
+        case "percentage":
+            return `${track.value}%`;
+        case "fr":
+            return `${track.value}fr`;
+        case "auto":
+            return "auto";
+        case "min_max":
+            return `minmax(${track.value[0]}px, ${track.value[1]}px)`;
+    }
 }
 
 function computeNodeStyle(
@@ -250,6 +587,12 @@ function computeNodeStyle(
         if (props.text_align) {
             style.textAlign = props.text_align;
         }
+        if (props.spacing !== undefined) {
+            style.gap = `${props.spacing}px`;
+        }
+        if (props.padding !== undefined) {
+            style.padding = `${props.padding}px`;
+        }
     }
 
     if (layout) {
@@ -262,6 +605,10 @@ function computeNodeStyle(
                     style.width = `${dims.width.value}%`;
                 } else if (dims.width.type === "hug_content") {
                     style.width = "max-content";
+                } else if (dims.width.type === "fill") {
+                    style.width = dims.width.value ? `${dims.width.value}%` : "100%";
+                    style.flexGrow = 1;
+                    style.minWidth = 0;
                 }
             }
             if (dims.height) {
@@ -271,6 +618,10 @@ function computeNodeStyle(
                     style.height = `${dims.height.value}%`;
                 } else if (dims.height.type === "hug_content") {
                     style.height = "max-content";
+                } else if (dims.height.type === "fill") {
+                    style.height = dims.height.value ? `${dims.height.value}%` : "100%";
+                    style.flexGrow = 1;
+                    style.minHeight = 0;
                 }
             }
             if (dims.min_width !== undefined) {
@@ -284,6 +635,110 @@ function computeNodeStyle(
             }
             if (dims.max_height !== undefined) {
                 style.maxHeight = `${dims.max_height}px`;
+            }
+        }
+
+        // Rust Flexbox behaviors: fill_width and fill_height
+        if (props?.fill_width) {
+            style.flexGrow = layout.flex_item?.grow ?? 1;
+            style.alignSelf = style.alignSelf ?? "stretch";
+            style.width = "100%";
+            style.minWidth = 0;
+        }
+
+        if (props?.fill_height) {
+            style.flexGrow = layout.flex_item?.grow ?? 1;
+            style.height = "100%";
+            style.minHeight = 0;
+        }
+
+        if (layout.flex_item) {
+            const fi = layout.flex_item;
+            if (fi.grow !== undefined) {
+                style.flexGrow = fi.grow;
+            }
+            if (fi.shrink !== undefined) {
+                style.flexShrink = fi.shrink;
+            }
+            if (fi.basis) {
+                if (fi.basis.type === "fixed") {
+                    style.flexBasis = `${fi.basis.value}px`;
+                } else if (fi.basis.type === "percentage") {
+                    style.flexBasis = `${fi.basis.value}%`;
+                } else if (fi.basis.type === "auto") {
+                    style.flexBasis = "auto";
+                }
+            }
+            if (fi.align_self) {
+                style.alignSelf = formatCssFlexAlign(fi.align_self);
+            }
+        }
+
+        if (layout.container) {
+            const c = layout.container;
+            if (c.type === "flex") {
+                const fc = c as unknown as FlexContainer;
+                if (fc.direction) {
+                    style.flexDirection =
+                        fc.direction === "row_reverse"
+                            ? "row-reverse"
+                            : fc.direction === "column_reverse"
+                            ? "column-reverse"
+                            : fc.direction;
+                }
+                if (fc.wrap) {
+                    style.flexWrap =
+                        fc.wrap === "wrap_reverse"
+                            ? "wrap-reverse"
+                            : fc.wrap === "no_wrap"
+                            ? "nowrap"
+                            : "wrap";
+                }
+                if (fc.justify_content) {
+                    style.justifyContent = formatCssFlexAlign(fc.justify_content);
+                }
+                if (fc.align_items) {
+                    style.alignItems = formatCssFlexAlign(fc.align_items);
+                }
+                if (fc.gap !== undefined) {
+                    style.gap = `${fc.gap}px`;
+                }
+            } else if (c.type === "grid") {
+                const gc = c as unknown as GridContainer;
+                if (gc.columns && gc.columns.length > 0) {
+                    style.gridTemplateColumns = gc.columns.map(formatGridTrack).join(" ");
+                }
+                if (gc.rows && gc.rows.length > 0) {
+                    style.gridTemplateRows = gc.rows.map(formatGridTrack).join(" ");
+                }
+                if (gc.column_gap !== undefined) {
+                    style.columnGap = `${gc.column_gap}px`;
+                }
+                if (gc.row_gap !== undefined) {
+                    style.rowGap = `${gc.row_gap}px`;
+                }
+                if (gc.align_items) {
+                    style.alignItems = formatCssFlexAlign(gc.align_items);
+                }
+                if (gc.justify_items) {
+                    style.justifyItems = formatCssFlexAlign(gc.justify_items);
+                }
+            }
+        }
+
+        if (layout.grid) {
+            const g = layout.grid;
+            if (g.column !== undefined) {
+                style.gridColumnStart = g.column;
+            }
+            if (g.column_span !== undefined) {
+                style.gridColumnEnd = `span ${g.column_span}`;
+            }
+            if (g.row !== undefined) {
+                style.gridRowStart = g.row;
+            }
+            if (g.row_span !== undefined) {
+                style.gridRowEnd = `span ${g.row_span}`;
             }
         }
 
@@ -336,11 +791,15 @@ function getContainerClasses(
     type: WidgetType,
     layout?: WidgetNode["layout"]
 ): string {
+    const isFlexWrap =
+        layout?.container?.type === "flex" &&
+        (layout.container as unknown as FlexContainer).wrap === "wrap";
+
     switch (type) {
         case "v_box":
-            return "flex flex-col gap-2";
+            return `flex flex-col gap-2 ${isFlexWrap ? "flex-wrap" : ""}`;
         case "h_box":
-            return "flex flex-row items-center gap-2";
+            return `flex flex-row items-center gap-2 ${isFlexWrap ? "flex-wrap" : ""}`;
         case "anchor_pane":
             return "relative w-full h-full";
         case "border_pane":
@@ -349,6 +808,10 @@ function getContainerClasses(
             return "grid gap-2";
         case "scroll_pane":
             return "overflow-auto";
+        case "conditional_node":
+            return "flex flex-col gap-2 p-2 rounded border border-dashed border-amber-500/30 bg-amber-950/10";
+        case "generic_widget":
+            return "flex flex-col gap-2 p-2 rounded border border-purple-500/30 bg-purple-950/10";
         default:
             return "";
     }
@@ -360,8 +823,18 @@ function isSpecialSlotContainer(type: WidgetType): boolean {
 
 function renderSlotChildren(
     node: WidgetNode,
+    rootNode: WidgetNode,
     selectedNodeId: string | null,
-    setHoveredNodeId: (id: string | null) => void
+    setHoveredNodeId: (id: string | null) => void,
+    setSelectedNodeId: (id: string | null) => void,
+    validationMap: Map<string, WidgetValidationError[]>,
+    dragOverContainerId: string | null,
+    setDragOverContainerId: (id: string | null) => void,
+    executeNodeMutation: (
+        description: string,
+        mutator: (root: WidgetNode) => WidgetNode
+    ) => void,
+    cameraZoom: number
 ): React.ReactNode {
     const children = node.children ?? [];
     const topChild = children.find((c) => c.slot === "top");
@@ -378,8 +851,15 @@ function renderSlotChildren(
                 <div className="col-span-3">
                     <WidgetDomNode
                         node={topChild}
+                        rootNode={rootNode}
                         selectedNodeId={selectedNodeId}
                         setHoveredNodeId={setHoveredNodeId}
+                        setSelectedNodeId={setSelectedNodeId}
+                        validationMap={validationMap}
+                        dragOverContainerId={dragOverContainerId}
+                        setDragOverContainerId={setDragOverContainerId}
+                        executeNodeMutation={executeNodeMutation}
+                        cameraZoom={cameraZoom}
                     />
                 </div>
             )}
@@ -387,8 +867,15 @@ function renderSlotChildren(
                 <div className="row-start-2 col-start-1">
                     <WidgetDomNode
                         node={leftChild}
+                        rootNode={rootNode}
                         selectedNodeId={selectedNodeId}
                         setHoveredNodeId={setHoveredNodeId}
+                        setSelectedNodeId={setSelectedNodeId}
+                        validationMap={validationMap}
+                        dragOverContainerId={dragOverContainerId}
+                        setDragOverContainerId={setDragOverContainerId}
+                        executeNodeMutation={executeNodeMutation}
+                        cameraZoom={cameraZoom}
                     />
                 </div>
             )}
@@ -396,8 +883,15 @@ function renderSlotChildren(
                 <div className="row-start-2 col-start-2 w-full h-full">
                     <WidgetDomNode
                         node={centerChild}
+                        rootNode={rootNode}
                         selectedNodeId={selectedNodeId}
                         setHoveredNodeId={setHoveredNodeId}
+                        setSelectedNodeId={setSelectedNodeId}
+                        validationMap={validationMap}
+                        dragOverContainerId={dragOverContainerId}
+                        setDragOverContainerId={setDragOverContainerId}
+                        executeNodeMutation={executeNodeMutation}
+                        cameraZoom={cameraZoom}
                     />
                 </div>
             )}
@@ -405,8 +899,15 @@ function renderSlotChildren(
                 <div className="row-start-2 col-start-3">
                     <WidgetDomNode
                         node={rightChild}
+                        rootNode={rootNode}
                         selectedNodeId={selectedNodeId}
                         setHoveredNodeId={setHoveredNodeId}
+                        setSelectedNodeId={setSelectedNodeId}
+                        validationMap={validationMap}
+                        dragOverContainerId={dragOverContainerId}
+                        setDragOverContainerId={setDragOverContainerId}
+                        executeNodeMutation={executeNodeMutation}
+                        cameraZoom={cameraZoom}
                     />
                 </div>
             )}
@@ -414,8 +915,15 @@ function renderSlotChildren(
                 <div className="col-span-3 row-start-3">
                     <WidgetDomNode
                         node={bottomChild}
+                        rootNode={rootNode}
                         selectedNodeId={selectedNodeId}
                         setHoveredNodeId={setHoveredNodeId}
+                        setSelectedNodeId={setSelectedNodeId}
+                        validationMap={validationMap}
+                        dragOverContainerId={dragOverContainerId}
+                        setDragOverContainerId={setDragOverContainerId}
+                        executeNodeMutation={executeNodeMutation}
+                        cameraZoom={cameraZoom}
                     />
                 </div>
             )}
@@ -423,15 +931,121 @@ function renderSlotChildren(
     );
 }
 
+interface CanvasImageWidgetProps {
+    readonly node: WidgetNode;
+    readonly resolvedAsset?: { readonly webviewUri: string; readonly exists: boolean };
+    readonly theme?: ThemeConfig | null;
+}
+
+const CanvasImageWidget: FC<CanvasImageWidgetProps> = ({ node, resolvedAsset }) => {
+    const [hasError, setHasError] = useState(false);
+    const rawPath = node.properties?.image_path ?? "";
+
+    useEffect(() => {
+        setHasError(false);
+    }, [rawPath, resolvedAsset?.webviewUri]);
+
+    const isHttpOrData =
+        rawPath.startsWith("data:") ||
+        rawPath.startsWith("http://") ||
+        rawPath.startsWith("https://");
+
+    const effectiveSrc = resolvedAsset?.webviewUri || (isHttpOrData ? rawPath : null);
+    const isMissingOrFailed =
+        !rawPath ||
+        hasError ||
+        (resolvedAsset && !resolvedAsset.exists) ||
+        (!effectiveSrc && !isHttpOrData);
+
+    if (isMissingOrFailed) {
+        let statusLabel = "Missing Path";
+        if (rawPath) {
+            if (resolvedAsset && !resolvedAsset.exists) {
+                statusLabel = "File Not Found";
+            } else if (hasError) {
+                statusLabel = "Load Error";
+            } else {
+                statusLabel = "Unresolved Asset";
+            }
+        }
+
+        return (
+            <div
+                className="w-full h-full min-h-[96px] min-w-[96px] p-3 rounded-md bg-slate-900/90 border border-slate-700/80 flex flex-col items-center justify-center gap-1.5 text-center select-none shadow-inner overflow-hidden"
+                style={{
+                    borderRadius:
+                        node.properties?.corner_radius !== undefined
+                            ? `${node.properties.corner_radius}px`
+                            : undefined,
+                }}
+                title={rawPath ? `Image source: ${rawPath} (${statusLabel})` : "No image path specified"}
+            >
+                <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 shrink-0">
+                    <svg
+                        className="w-4 h-4 text-slate-400"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.75"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    >
+                        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                        <circle cx="9" cy="9" r="2" />
+                        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                        <line x1="3" y1="3" x2="21" y2="21" stroke="#f43f5e" strokeWidth="2" />
+                    </svg>
+                </div>
+                <div className="flex flex-col items-center max-w-full px-1 overflow-hidden">
+                    <span className="text-[11px] font-mono text-slate-300 truncate max-w-[200px]">
+                        {rawPath || "No image path"}
+                    </span>
+                    <span className="text-[9px] uppercase tracking-wider font-semibold font-mono text-rose-400 bg-rose-950/60 border border-rose-900/60 px-1.5 py-0.2 rounded mt-0.5">
+                        {statusLabel}
+                    </span>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <img
+            src={effectiveSrc ?? ""}
+            alt={resolvePropertyValue(node.properties?.text, rawPath || "image")}
+            onError={() => setHasError(true)}
+            className="w-full h-full object-contain pointer-events-none select-none block"
+            style={{
+                borderRadius:
+                    node.properties?.corner_radius !== undefined
+                        ? `${node.properties.corner_radius}px`
+                        : undefined,
+            }}
+        />
+    );
+};
+
 function renderWidgetContent(
     node: WidgetNode,
     _selectedNodeId: string | null,
     _setHoveredNodeId: (id: string | null) => void,
-    theme?: ThemeConfig | null
+    theme?: ThemeConfig | null,
+    resolvedAssets?: Readonly<Record<string, { readonly webviewUri: string; readonly exists: boolean }>>
 ): React.ReactNode {
     const { widget_type, properties } = node;
 
     switch (widget_type) {
+        case "image":
+            return (
+                <CanvasImageWidget
+                    node={node}
+                    resolvedAsset={
+                        node.properties?.image_path
+                            ? resolvedAssets?.[node.properties.image_path]
+                            : undefined
+                    }
+                    theme={theme}
+                />
+            );
         case "button":
             return (
                 <button
@@ -439,13 +1053,13 @@ function renderWidgetContent(
                     disabled={properties?.disabled}
                     className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-colors shadow-sm disabled:opacity-50 select-none"
                 >
-                    {properties?.text ?? "Button"}
+                    {resolvePropertyValue(properties?.text, "Button")}
                 </button>
             );
         case "label":
             return (
                 <span className="text-sm text-zinc-200 select-none">
-                    {properties?.text ?? "Label"}
+                    {resolvePropertyValue(properties?.text, "Label")}
                 </span>
             );
         case "text_input":
@@ -453,8 +1067,8 @@ function renderWidgetContent(
                 <input
                     type="text"
                     readOnly
-                    placeholder={properties?.placeholder ?? "Input..."}
-                    value={properties?.text ?? ""}
+                    placeholder={resolvePropertyValue(properties?.placeholder, "Input...")}
+                    value={resolvePropertyValue(properties?.text, "")}
                     className="px-3 py-1.5 rounded bg-zinc-900 border border-zinc-700 text-zinc-200 text-sm outline-none w-full"
                 />
             );
@@ -467,7 +1081,7 @@ function renderWidgetContent(
                         readOnly
                         className="rounded border-zinc-700 bg-zinc-900 text-blue-600"
                     />
-                    <span>{properties?.text ?? "Checkbox"}</span>
+                    <span>{resolvePropertyValue(properties?.text, "Checkbox")}</span>
                 </label>
             );
         case "radio_button":
@@ -479,7 +1093,7 @@ function renderWidgetContent(
                         readOnly
                         className="border-zinc-700 bg-zinc-900 text-blue-600"
                     />
-                    <span>{properties?.text ?? "Radio"}</span>
+                    <span>{resolvePropertyValue(properties?.text, "Radio")}</span>
                 </label>
             );
         case "slider":
@@ -511,7 +1125,7 @@ function renderWidgetContent(
         case "combo_box":
             return (
                 <div className="px-3 py-1.5 rounded bg-zinc-900 border border-zinc-700 text-zinc-200 text-sm flex items-center justify-between w-full">
-                    <span>{properties?.text ?? "Select option"}</span>
+                    <span>{resolvePropertyValue(properties?.text, "Select option")}</span>
                     <span className="text-zinc-500 text-xs">&#9662;</span>
                 </div>
             );
@@ -596,7 +1210,7 @@ function renderWidgetContent(
                 <div className="w-full h-full min-h-[180px] p-3 rounded bg-zinc-950 border border-zinc-800 flex flex-col justify-between overflow-hidden shadow-inner">
                     <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-zinc-200">{properties?.text ?? "Analytics & Financial Series"}</span>
+                            <span className="text-xs font-semibold text-zinc-200">{resolvePropertyValue(properties?.text, "Analytics & Financial Series")}</span>
                             <span className="text-[10px] font-mono text-zinc-500">{properties?.chart_x_axis ?? "Q1-Q4"}</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-[10px] text-zinc-400">
@@ -659,7 +1273,7 @@ function renderWidgetContent(
                     <div className="flex items-center gap-1.5 px-1 py-1 font-semibold text-zinc-200 border-b border-zinc-800/60 pb-1.5 mb-1">
                         <span className="text-zinc-400">▾</span>
                         <span>📂</span>
-                        <span>{properties?.text ?? "Project Explorer"}</span>
+                        <span>{resolvePropertyValue(properties?.text, "Project Explorer")}</span>
                     </div>
                     <div className="flex flex-col gap-0.5 pl-3">
                         <div className="flex items-center gap-1.5 px-1 py-0.5 rounded text-zinc-300 hover:bg-zinc-900 cursor-pointer">
@@ -754,6 +1368,22 @@ function renderWidgetContent(
                         backgroundColor: resolveColorToken(properties?.background_color, theme),
                         borderColor: resolveColorToken(properties?.border_color, theme),
                     }}
+                />
+            );
+        case "conditional_node":
+            return (
+                <div className="w-full flex flex-col p-2 rounded border border-dashed border-amber-500/50 bg-amber-950/20 text-amber-300">
+                    <div className="flex items-center gap-1.5 text-xs font-mono font-semibold px-2 py-1 bg-amber-500/20 rounded w-fit mb-1 border border-amber-500/30">
+                        <span>🔀 Condition Switcher:</span>
+                        <span className="text-amber-100">{node.properties?.condition ?? "if condition"}</span>
+                    </div>
+                </div>
+            );
+        case "generic_widget":
+            return (
+                <GenericWidgetPlaceholder
+                    node={node}
+                    isSelected={_selectedNodeId === node.id}
                 />
             );
         default:

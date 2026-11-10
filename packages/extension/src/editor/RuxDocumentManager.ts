@@ -6,6 +6,7 @@ import {
     type DaemonStatus,
     type DaemonValidationResult,
     type ExtensionToWebviewMessage,
+    type ResolvedAssetItem,
     type RuxDocument,
     type TargetFramework,
     type TargetLanguage,
@@ -15,12 +16,15 @@ import {
     serializeRuxDocument,
 } from "@ruxel/shared-types";
 import type { DaemonClient } from "../daemon/DaemonClient";
+import { SmartDebounceController } from "./DebounceQueue";
+import { resolveAssetPath, resolveAstAssets } from "./AssetResolver";
 
 export class RuxDocumentManager implements vscode.Disposable {
     private isDisposed: boolean = false;
     private lastSentText: string = "";
     private revision: number = 0;
     private validationDebounceTimer: NodeJS.Timeout | null = null;
+    private readonly documentDebouncer = new SmartDebounceController<string>(300);
     private readonly disposables: vscode.Disposable[] = [];
 
     constructor(
@@ -88,6 +92,15 @@ export class RuxDocumentManager implements vscode.Disposable {
                     message.summary
                 );
                 break;
+            case "CRDT_DELTA_CHANGE":
+                void this.applyCrdtDeltaChange(
+                    message.deltaBase64,
+                    message.summary
+                );
+                break;
+            case "CRDT_SYNC_REQUEST":
+                void this.handleCrdtSyncRequest(message.stateVectorBase64);
+                break;
             case "NODE_PATCH":
                 break;
             case "VALIDATE_REQUEST":
@@ -112,7 +125,8 @@ export class RuxDocumentManager implements vscode.Disposable {
                 void this.importFigma(
                     message.figmaToken,
                     message.fileKeyOrUrl,
-                    message.nodeId
+                    message.nodeId,
+                    message.figmaJson
                 );
                 break;
             case "COMPILE_WASM_REQUEST":
@@ -131,6 +145,9 @@ export class RuxDocumentManager implements vscode.Disposable {
                     message.dataBase64,
                     message.sourcePath
                 );
+                break;
+            case "RESOLVE_ASSETS_REQUEST":
+                void this.handleResolveAssetsRequest(message.paths);
                 break;
             case "SELECT_NODE":
                 break;
@@ -208,7 +225,12 @@ export class RuxDocumentManager implements vscode.Disposable {
             rux_path: this.document.uri.fsPath,
         });
 
+        void this.daemonClient.crdtSync({
+            rux_path: this.document.uri.fsPath,
+        });
+
         void this.runValidation(rawText);
+        void this.resolveAndSendAssets(parsedDoc);
     }
 
     private handleExternalDocumentChange(): void {
@@ -219,24 +241,49 @@ export class RuxDocumentManager implements vscode.Disposable {
             return;
         }
 
-        this.lastSentText = currentText;
-        this.revision++;
+        const docUriKey = this.document.uri.toString();
+        this.documentDebouncer.schedule(
+            docUriKey,
+            currentText,
+            (debouncedText) => {
+                if (this.isDisposed) {
+                    return;
+                }
 
-        let parsedDoc: RuxDocument | null = null;
-        try {
-            parsedDoc = JSON.parse(currentText) as RuxDocument;
-        } catch {
-            parsedDoc = null;
-        }
+                const freshText = this.document.getText();
+                const normalizedFresh = freshText.replace(/\r\n/g, "\n");
+                const normalizedDebounced = debouncedText.replace(/\r\n/g, "\n");
 
-        this.postMessage({
-            type: "DOCUMENT_UPDATE",
-            rawText: currentText,
-            document: parsedDoc,
-            revision: this.revision,
-        });
+                // If newer edits have occurred or if already synced, skip stale debounce
+                if (normalizedFresh !== normalizedDebounced) {
+                    return;
+                }
+                if (normalizedFresh === this.lastSentText.replace(/\r\n/g, "\n")) {
+                    return;
+                }
 
-        this.scheduleValidation(currentText);
+                this.lastSentText = freshText;
+                this.revision++;
+
+                let parsedDoc: RuxDocument | null = null;
+                try {
+                    parsedDoc = JSON.parse(freshText) as RuxDocument;
+                } catch {
+                    parsedDoc = null;
+                }
+
+                this.postMessage({
+                    type: "DOCUMENT_UPDATE",
+                    rawText: freshText,
+                    document: parsedDoc,
+                    revision: this.revision,
+                });
+
+                this.scheduleValidation(freshText);
+                void this.resolveAndSendAssets(parsedDoc);
+            },
+            300
+        );
     }
 
     private async handleAstPatchedFromCode(
@@ -256,6 +303,9 @@ export class RuxDocumentManager implements vscode.Disposable {
             return;
         }
         
+        // Cancel any pending debounced text buffer change to avoid stale overwriting
+        this.documentDebouncer.cancel(this.document.uri.toString());
+
         const newRawText = JSON.stringify(payload.document, null, 2);
         if (newRawText === this.document.getText()) return;
         this.lastSentText = newRawText;
@@ -266,12 +316,26 @@ export class RuxDocumentManager implements vscode.Disposable {
         const edit = new vscode.WorkspaceEdit();
         edit.replace(this.document.uri, entireRange, newRawText);
         await vscode.workspace.applyEdit(edit);
+
+        this.postMessage({
+            type: "AST_UPDATED_FROM_CODE",
+            document: payload.document,
+            rawText: newRawText,
+            changedFile: payload.changed_file,
+            timestamp: payload.timestamp,
+            patches: payload.patches,
+        });
+        void this.resolveAndSendAssets(payload.document);
     }
 
     private async applyWebviewDocumentChange(
         newText: string,
         _summary?: string
     ): Promise<void> {
+        // CRITICAL: Cancel any pending text-buffer debounced updates immediately.
+        // Canvas-to-Code sync must remain instant, and stale keystrokes must never overwrite fresh visual changes.
+        this.documentDebouncer.cancel(this.document.uri.toString());
+
         const normalizedNew = newText.replace(/\r\n/g, "\n");
         const normalizedDoc = this.document.getText().replace(/\r\n/g, "\n");
         if (normalizedNew === normalizedDoc) {
@@ -295,6 +359,62 @@ export class RuxDocumentManager implements vscode.Disposable {
         }
 
         this.scheduleValidation(newText);
+        try {
+            const parsed = JSON.parse(newText) as RuxDocument;
+            void this.resolveAndSendAssets(parsed);
+        } catch {}
+    }
+
+    private async applyCrdtDeltaChange(
+        deltaBase64: string,
+        _summary?: string
+    ): Promise<void> {
+        // CRITICAL: Cancel pending text debounces immediately.
+        // Canvas visual CRDT mutations are authoritative and must never be overwritten by stale keystrokes.
+        this.documentDebouncer.cancel(this.document.uri.toString());
+
+        try {
+            const result = await this.daemonClient.crdtApplyDelta({
+                rux_path: this.document.uri.fsPath,
+                delta_base64: deltaBase64,
+            });
+
+            if (result.success && result.updated_ast) {
+                const serialized = serializeRuxDocument(result.updated_ast);
+                this.lastSentText = serialized;
+
+                const entireRange = new vscode.Range(
+                    this.document.positionAt(0),
+                    this.document.positionAt(this.document.getText().length)
+                );
+                const edit = new vscode.WorkspaceEdit();
+                edit.replace(this.document.uri, entireRange, serialized);
+                await vscode.workspace.applyEdit(edit);
+
+                this.scheduleValidation(serialized);
+            }
+        } catch (error) {
+            console.warn("Failed to apply CRDT delta in daemon:", error);
+        }
+    }
+
+    private async handleCrdtSyncRequest(
+        stateVectorBase64?: string
+    ): Promise<void> {
+        try {
+            const result = await this.daemonClient.crdtSync({
+                rux_path: this.document.uri.fsPath,
+                state_vector_base64: stateVectorBase64,
+            });
+
+            this.postMessage({
+                type: "CRDT_SYNC_RESPONSE",
+                deltaBase64: result.delta_base64,
+                stateVectorBase64: result.state_vector_base64,
+            });
+        } catch (error) {
+            console.warn("Failed to sync CRDT state with daemon:", error);
+        }
     }
 
     private scheduleValidation(content: string): void {
@@ -461,23 +581,25 @@ export class RuxDocumentManager implements vscode.Disposable {
     }
 
     private async importFigma(
-        figmaToken: string,
-        fileKeyOrUrl: string,
-        nodeId?: string
+        figmaToken?: string,
+        fileKeyOrUrl?: string,
+        nodeId?: string,
+        figmaJson?: string
     ): Promise<void> {
         try {
             this.postMessage({
                 type: "FIGMA_IMPORT_PROGRESS",
-                step: "Connecting to Figma REST API...",
+                step: figmaJson ? "Ingesting Figma Plugin JSON..." : "Connecting to Figma REST API...",
                 progress: 20,
             });
 
             const projectDir = path.dirname(this.document.uri.fsPath);
             const result = await this.daemonClient.importFigma({
-                figma_token: figmaToken,
-                file_key: fileKeyOrUrl,
+                figma_token: figmaToken ?? "",
+                file_key: fileKeyOrUrl ?? "",
                 node_id: nodeId,
                 project_dir: projectDir,
+                figma_json: figmaJson,
             });
 
             this.postMessage({
@@ -664,6 +786,63 @@ export class RuxDocumentManager implements vscode.Disposable {
         }
     }
 
+    private async resolveAndSendAssets(doc: RuxDocument | null): Promise<void> {
+        if (!doc || this.isDisposed) return;
+        try {
+            const workspaceRoots = vscode.workspace.workspaceFolders
+                ? vscode.workspace.workspaceFolders.map((wf) => wf.uri.fsPath)
+                : [path.dirname(this.document.uri.fsPath)];
+            const baseDir = path.dirname(this.document.uri.fsPath);
+
+            const assetMap = await resolveAstAssets(doc, {
+                baseDir,
+                workspaceRoots,
+                toWebviewUri: (fsPath) =>
+                    this.webviewPanel.webview.asWebviewUri(vscode.Uri.file(fsPath)).toString(),
+            });
+
+            if (this.isDisposed) return;
+
+            this.postMessage({
+                type: "ASSET_MAP_UPDATE",
+                assets: assetMap,
+            });
+        } catch (err) {
+            console.error("Failed to resolve AST assets:", err);
+        }
+    }
+
+    private async handleResolveAssetsRequest(paths: readonly string[]): Promise<void> {
+        if (this.isDisposed || !paths || paths.length === 0) return;
+        try {
+            const workspaceRoots = vscode.workspace.workspaceFolders
+                ? vscode.workspace.workspaceFolders.map((wf) => wf.uri.fsPath)
+                : [path.dirname(this.document.uri.fsPath)];
+            const baseDir = path.dirname(this.document.uri.fsPath);
+
+            const assetMap: Record<string, ResolvedAssetItem> = {};
+            await Promise.all(
+                paths.map(async (p) => {
+                    assetMap[p] = await resolveAssetPath(p, {
+                        baseDir,
+                        workspaceRoots,
+                        toWebviewUri: (fsPath) =>
+                            this.webviewPanel.webview.asWebviewUri(vscode.Uri.file(fsPath)).toString(),
+                    });
+                })
+            );
+
+            if (this.isDisposed) return;
+
+            this.postMessage({
+                type: "ASSET_MAP_UPDATE",
+                assets: assetMap,
+            });
+        } catch (err) {
+            console.error("Failed to resolve requested assets:", err);
+        }
+    }
+
     private postMessage(message: ExtensionToWebviewMessage): void {
         if (this.isDisposed) {
             return;
@@ -677,6 +856,7 @@ export class RuxDocumentManager implements vscode.Disposable {
         }
         this.isDisposed = true;
 
+        this.documentDebouncer.dispose();
         if (this.validationDebounceTimer) {
             clearTimeout(this.validationDebounceTimer);
             this.validationDebounceTimer = null;

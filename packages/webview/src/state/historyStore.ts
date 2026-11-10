@@ -1,115 +1,147 @@
 import { create } from "zustand";
-import type { Command } from "../history/types";
+import * as Y from "yjs";
+import { sharedCrdtBridge, type CrdtDocumentBridge } from "../crdt/crdtBridge.ts";
+
+export type UndoStackItem = ReturnType<Y.UndoManager["undo"]>;
 
 export interface HistoryState {
-    readonly undoStack: readonly Command[];
-    readonly redoStack: readonly Command[];
+    readonly undoManager: Y.UndoManager;
+    readonly undoStack: readonly unknown[];
+    readonly redoStack: readonly unknown[];
     readonly maxHistory: number;
     readonly canUndo: boolean;
     readonly canRedo: boolean;
     readonly isExecutingHistory: boolean;
 
-    readonly pushCommand: (command: Command) => void;
-    readonly undo: () => Command | null;
-    readonly redo: () => Command | null;
+    readonly bindUndoManager: (undoManager: Y.UndoManager, bridge?: CrdtDocumentBridge) => void;
+    readonly pushCommand: (command?: unknown) => void;
+    readonly undo: () => UndoStackItem;
+    readonly redo: () => UndoStackItem;
+    readonly stopCapturing: () => void;
     readonly clear: () => void;
 }
 
 const DEFAULT_MAX_HISTORY = 50;
 
-export const useHistoryStore = create<HistoryState>((set, get) => ({
-    undoStack: [],
-    redoStack: [],
-    maxHistory: DEFAULT_MAX_HISTORY,
-    canUndo: false,
-    canRedo: false,
-    isExecutingHistory: false,
+export const useHistoryStore = create<HistoryState>((set, get) => {
+    let initialUndoManager = sharedCrdtBridge.getUndoManager();
+    let cleanupListeners: (() => void) | null = null;
 
-    pushCommand: (command: Command) => {
-        const { isExecutingHistory, undoStack, maxHistory } = get();
-        if (isExecutingHistory) {
-            return;
-        }
-
-        const nextUndo = [...undoStack, command];
-        if (nextUndo.length > maxHistory) {
-            nextUndo.shift();
-        }
-
-        set({
-            undoStack: nextUndo,
-            redoStack: [],
-            canUndo: true,
-            canRedo: false,
-        });
-    },
-
-    undo: () => {
-        const { undoStack, redoStack, isExecutingHistory } = get();
-        if (undoStack.length === 0 || isExecutingHistory) {
-            return null;
-        }
-
-        const nextUndo = [...undoStack];
-        const command = nextUndo.pop();
-        if (!command) {
-            return null;
-        }
-
-        set({ isExecutingHistory: true });
-        try {
-            command.undo();
-        } finally {
-            const nextRedo = [...redoStack, command];
+    const setupListeners = (um: Y.UndoManager) => {
+        const updateState = () => {
+            const { maxHistory } = get();
+            if (um.undoStack.length > maxHistory) {
+                um.undoStack.splice(0, um.undoStack.length - maxHistory);
+            }
             set({
-                undoStack: nextUndo,
-                redoStack: nextRedo,
-                canUndo: nextUndo.length > 0,
-                canRedo: true,
+                canUndo: um.canUndo(),
+                canRedo: um.canRedo(),
+                undoStack: [...um.undoStack],
+                redoStack: [...um.redoStack],
+            });
+        };
+
+        um.on("stack-item-added", updateState);
+        um.on("stack-item-popped", updateState);
+        um.on("stack-cleared", updateState);
+        um.on("stack-item-updated", updateState);
+
+        return () => {
+            um.off("stack-item-added", updateState);
+            um.off("stack-item-popped", updateState);
+            um.off("stack-cleared", updateState);
+            um.off("stack-item-updated", updateState);
+        };
+    };
+
+    cleanupListeners = setupListeners(initialUndoManager);
+
+    return {
+        undoManager: initialUndoManager,
+        undoStack: [...initialUndoManager.undoStack],
+        redoStack: [...initialUndoManager.redoStack],
+        maxHistory: DEFAULT_MAX_HISTORY,
+        canUndo: initialUndoManager.canUndo(),
+        canRedo: initialUndoManager.canRedo(),
+        isExecutingHistory: false,
+
+        bindUndoManager: (newUm: Y.UndoManager, _bridge?: CrdtDocumentBridge) => {
+            if (cleanupListeners) {
+                cleanupListeners();
+            }
+            cleanupListeners = setupListeners(newUm);
+            set({
+                undoManager: newUm,
+                canUndo: newUm.canUndo(),
+                canRedo: newUm.canRedo(),
+                undoStack: [...newUm.undoStack],
+                redoStack: [...newUm.redoStack],
                 isExecutingHistory: false,
             });
-        }
+        },
 
-        return command;
-    },
+        pushCommand: (_command?: unknown) => {
+            get().undoManager.stopCapturing();
+        },
 
-    redo: () => {
-        const { undoStack, redoStack, isExecutingHistory } = get();
-        if (redoStack.length === 0 || isExecutingHistory) {
-            return null;
-        }
+        undo: () => {
+            const { undoManager, isExecutingHistory } = get();
+            if (!undoManager.canUndo() || isExecutingHistory) {
+                return null;
+            }
 
-        const nextRedo = [...redoStack];
-        const command = nextRedo.pop();
-        if (!command) {
-            return null;
-        }
+            set({ isExecutingHistory: true });
+            let popped: UndoStackItem = null;
+            try {
+                popped = undoManager.undo();
+                return popped;
+            } finally {
+                set({
+                    isExecutingHistory: false,
+                    canUndo: undoManager.canUndo(),
+                    canRedo: undoManager.canRedo(),
+                    undoStack: [...undoManager.undoStack],
+                    redoStack: [...undoManager.redoStack],
+                });
+            }
+        },
 
-        set({ isExecutingHistory: true });
-        try {
-            command.redo();
-        } finally {
-            const nextUndo = [...undoStack, command];
+        redo: () => {
+            const { undoManager, isExecutingHistory } = get();
+            if (!undoManager.canRedo() || isExecutingHistory) {
+                return null;
+            }
+
+            set({ isExecutingHistory: true });
+            let popped: UndoStackItem = null;
+            try {
+                popped = undoManager.redo();
+                return popped;
+            } finally {
+                set({
+                    isExecutingHistory: false,
+                    canUndo: undoManager.canUndo(),
+                    canRedo: undoManager.canRedo(),
+                    undoStack: [...undoManager.undoStack],
+                    redoStack: [...undoManager.redoStack],
+                });
+            }
+        },
+
+        stopCapturing: () => {
+            get().undoManager.stopCapturing();
+        },
+
+        clear: () => {
+            const { undoManager } = get();
+            undoManager.clear();
             set({
-                undoStack: nextUndo,
-                redoStack: nextRedo,
-                canUndo: true,
-                canRedo: nextRedo.length > 0,
+                canUndo: false,
+                canRedo: false,
+                undoStack: [],
+                redoStack: [],
                 isExecutingHistory: false,
             });
-        }
-
-        return command;
-    },
-
-    clear: () => {
-        set({
-            undoStack: [],
-            redoStack: [],
-            canUndo: false,
-            canRedo: false,
-            isExecutingHistory: false,
-        });
-    },
-}));
-
+        },
+    };
+});

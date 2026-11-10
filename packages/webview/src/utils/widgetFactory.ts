@@ -68,7 +68,7 @@ export const PALETTE_CATEGORIES: readonly PaletteCategory[] = [
     },
     {
         name: "Custom",
-        types: ["custom_component"],
+        types: ["custom_component", "conditional_node", "generic_widget"],
     },
 ];
 
@@ -85,6 +85,8 @@ const CONTAINER_TYPES: ReadonlySet<WidgetType> = new Set<WidgetType>([
     "menu_bar",
     "menu",
     "tree_view",
+    "conditional_node",
+    "generic_widget",
 ]);
 
 export function isContainerWidget(widgetType: WidgetType): boolean {
@@ -130,6 +132,8 @@ const WIDGET_TYPE_LABELS: Readonly<Record<WidgetType, string>> = {
     canvas3_d: "Canvas3D",
     image: "Image",
     custom_component: "CustomComponent",
+    conditional_node: "Condition Switcher",
+    generic_widget: "Generic Widget",
 };
 
 export function getWidgetTypeLabel(widgetType: WidgetType): string {
@@ -175,6 +179,8 @@ const WIDGET_TYPE_ICONS: Readonly<Record<WidgetType, string>> = {
     canvas3_d: "🧊",
     image: "🖼️",
     custom_component: "🧩",
+    conditional_node: "🔀",
+    generic_widget: "⚡",
 };
 
 export function getWidgetTypeIcon(widgetType: WidgetType): string {
@@ -480,6 +486,18 @@ function getDefaultConfig(widgetType: WidgetType): DefaultWidgetConfig {
             };
         case "custom_component":
             return { width: 200, height: 200 };
+        case "conditional_node":
+            return {
+                width: 250,
+                height: 120,
+                properties: { condition: "if condition" },
+            };
+        case "generic_widget":
+            return {
+                width: 200,
+                height: 80,
+                properties: { custom_type: "CustomWidget", raw_args: "" },
+            };
     }
 }
 

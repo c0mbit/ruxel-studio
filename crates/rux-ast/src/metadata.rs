@@ -1,20 +1,15 @@
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TargetFramework {
+    #[default]
     Iced,
     Egui,
     Slint,
     Dioxus,
     Fyne,
     Flet,
-}
-
-impl Default for TargetFramework {
-    fn default() -> Self {
-        Self::Iced
-    }
 }
 
 fn default_schema_version() -> String {

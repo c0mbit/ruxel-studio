@@ -29,7 +29,7 @@ pub fn write_var_uint(buf: &mut Vec<u8>, mut val: u64) {
     buf.push((val & 0x7F) as u8);
 }
 
-pub fn read_var_uint_bytes<'a>(bytes: &'a [u8]) -> Option<(&'a [u8], usize)> {
+pub fn read_var_uint_bytes(bytes: &[u8]) -> Option<(&[u8], usize)> {
     let (len, consumed) = read_var_uint(bytes)?;
     let len = len as usize;
     if bytes.len() < consumed + len {
