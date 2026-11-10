@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "node --experimental-strip-types test/phase2_ui_inspector.test.ts && node --experimental-strip-types test/phase5_enterprise_features.test.ts && node --experimental-strip-types test/phase8_responsive_preview.test.ts && node --experimental-strip-types test/phase10_undo_redo_crdt.test.ts"
+    "test": "esbuild test/phase2_ui_inspector.test.ts test/phase5_enterprise_features.test.ts test/phase8_responsive_preview.test.ts test/phase10_undo_redo_crdt.test.ts --bundle --platform=node --format=esm --outdir=test-dist --packages=external --out-extension:.js=.mjs && node --test test-dist/phase2_ui_inspector.test.mjs test-dist/phase5_enterprise_features.test.mjs test-dist/phase8_responsive_preview.test.mjs test-dist/phase10_undo_redo_crdt.test.mjs"
   },
   "dependencies": {
     "@ruxel/shared-types": "*",
@@ -20,6 +20,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.0",
+    "esbuild": "^0.28.2",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.3.0",
