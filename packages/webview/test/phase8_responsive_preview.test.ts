@@ -258,3 +258,50 @@ test("Guardrail 2: Zero Regression - Auto-fit scale toggle and preview scale syn
     assert.equal(useViewportStore.getState().autoFitScale, true);
 });
 
+test("Directive 4: registerNodeBounds strict equality prevents redundant state updates and infinite loops", () => {
+    const store = useViewportStore.getState();
+    store.clearAllBounds();
+
+    const node1Bounds = {
+        id: "btn_1",
+        rect: { x: 10, y: 20, width: 100, height: 40 },
+        parentId: "container_root",
+    };
+
+    // 1. Initial registration updates state
+    store.registerNodeBounds(node1Bounds);
+    const initialMap = useViewportStore.getState().nodeBounds;
+    assert.equal(initialMap.has("btn_1"), true);
+    assert.deepEqual(initialMap.get("btn_1"), node1Bounds);
+
+    // 2. Re-registering with identical bounds MUST NOT update map reference
+    store.registerNodeBounds({
+        id: "btn_1",
+        rect: { x: 10, y: 20, width: 100, height: 40 },
+        parentId: "container_root",
+    });
+    const secondMap = useViewportStore.getState().nodeBounds;
+    assert.equal(secondMap, initialMap, "nodeBounds reference must remain strictly identical if bounds did not change");
+
+    // 3. Registering with strictly different bounds MUST update state
+    store.registerNodeBounds({
+        id: "btn_1",
+        rect: { x: 10, y: 25, width: 100, height: 40 },
+        parentId: "container_root",
+    });
+    const updatedMap = useViewportStore.getState().nodeBounds;
+    assert.notEqual(updatedMap, initialMap, "nodeBounds reference must update when bounds change");
+    assert.equal(updatedMap.get("btn_1")?.rect.y, 25);
+
+    // 4. unregisterNodeBounds for nonexistent id does not mutate state
+    const beforeUnregister = useViewportStore.getState().nodeBounds;
+    store.unregisterNodeBounds("nonexistent");
+    assert.equal(useViewportStore.getState().nodeBounds, beforeUnregister);
+
+    // 5. getEffectiveDimensions returns stable reference when dimensions do not change
+    const eff1 = useViewportStore.getState().getEffectiveDimensions();
+    const eff2 = useViewportStore.getState().getEffectiveDimensions();
+    assert.equal(eff1, eff2, "getEffectiveDimensions must return stable reference when dimensions are unchanged");
+});
+
+

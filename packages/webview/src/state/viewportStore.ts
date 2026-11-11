@@ -238,6 +238,8 @@ export interface ViewportState {
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4.0;
 
+let cachedEffectiveDimensions: ViewportDimensions | null = null;
+
 export const useViewportStore = create<ViewportState>((set, get) => ({
     camera: {
         panX: 120,
@@ -412,30 +414,55 @@ export const useViewportStore = create<ViewportState>((set, get) => ({
     },
 
     registerNodeBounds: (bounds) => {
+        const current = get().nodeBounds.get(bounds.id);
+        if (
+            current &&
+            current.rect.x === bounds.rect.x &&
+            current.rect.y === bounds.rect.y &&
+            current.rect.width === bounds.rect.width &&
+            current.rect.height === bounds.rect.height &&
+            current.parentId === bounds.parentId
+        ) {
+            return;
+        }
         const nextMap = new Map(get().nodeBounds);
         nextMap.set(bounds.id, bounds);
         set({ nodeBounds: nextMap });
     },
 
     unregisterNodeBounds: (id) => {
+        if (!get().nodeBounds.has(id)) {
+            return;
+        }
         const nextMap = new Map(get().nodeBounds);
         nextMap.delete(id);
         set({ nodeBounds: nextMap });
     },
 
     clearAllBounds: () => {
+        if (get().nodeBounds.size === 0) {
+            return;
+        }
         set({ nodeBounds: new Map() });
     },
 
     // Responsive Preview Actions Implementation
     setDeviceMode: (mode) => {
+        const currentMode = get().deviceMode;
+        const targetOrientation = mode === "desktop" ? "landscape" : "portrait";
+        if (currentMode === mode && get().orientation === targetOrientation) {
+            return;
+        }
         set({
             deviceMode: mode,
-            orientation: mode === "desktop" ? "landscape" : "portrait",
+            orientation: targetOrientation,
         });
     },
 
     setOrientation: (orientation) => {
+        if (get().orientation === orientation) {
+            return;
+        }
         set({ orientation });
     },
 
@@ -448,30 +475,43 @@ export const useViewportStore = create<ViewportState>((set, get) => ({
         const current = get().customDimensions;
         const next =
             typeof dimensions === "function" ? dimensions(current) : dimensions;
+        const width = clamp(next.width, MIN_VIEWPORT_WIDTH, MAX_VIEWPORT_WIDTH);
+        const height = clamp(next.height, MIN_VIEWPORT_HEIGHT, MAX_VIEWPORT_HEIGHT);
+        if (current.width === width && current.height === height) {
+            return;
+        }
         set({
             customDimensions: {
-                width: clamp(next.width, MIN_VIEWPORT_WIDTH, MAX_VIEWPORT_WIDTH),
-                height: clamp(next.height, MIN_VIEWPORT_HEIGHT, MAX_VIEWPORT_HEIGHT),
+                width,
+                height,
             },
         });
     },
 
     setCustomWidth: (width) => {
         const current = get().customDimensions;
+        const clampedWidth = clamp(width, MIN_VIEWPORT_WIDTH, MAX_VIEWPORT_WIDTH);
+        if (current.width === clampedWidth) {
+            return;
+        }
         set({
             customDimensions: {
                 ...current,
-                width: clamp(width, MIN_VIEWPORT_WIDTH, MAX_VIEWPORT_WIDTH),
+                width: clampedWidth,
             },
         });
     },
 
     setCustomHeight: (height) => {
         const current = get().customDimensions;
+        const clampedHeight = clamp(height, MIN_VIEWPORT_HEIGHT, MAX_VIEWPORT_HEIGHT);
+        if (current.height === clampedHeight) {
+            return;
+        }
         set({
             customDimensions: {
                 ...current,
-                height: clamp(height, MIN_VIEWPORT_HEIGHT, MAX_VIEWPORT_HEIGHT),
+                height: clampedHeight,
             },
         });
     },
@@ -490,11 +530,20 @@ export const useViewportStore = create<ViewportState>((set, get) => ({
 
     getEffectiveDimensions: () => {
         const { deviceMode, orientation, customDimensions } = get();
-        return calculateEffectiveDimensions(
+        const calculated = calculateEffectiveDimensions(
             deviceMode,
             orientation,
             customDimensions
         );
+        if (
+            cachedEffectiveDimensions &&
+            cachedEffectiveDimensions.width === calculated.width &&
+            cachedEffectiveDimensions.height === calculated.height
+        ) {
+            return cachedEffectiveDimensions;
+        }
+        cachedEffectiveDimensions = calculated;
+        return calculated;
     },
 
     resetToDefaultResolution: (defaultWidth = 1200, defaultHeight = 800) => {

@@ -2,7 +2,7 @@
   "name": "ruxel-studio",
   "displayName": "Ruxel Studio",
   "description": "Universal Visual UI Builder & Scene Builder for Rust and Go desktop applications",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "c0mbit",
   "license": "MIT OR Apache-2.0",
   "repository": {
