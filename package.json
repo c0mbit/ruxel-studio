@@ -1,8 +1,16 @@
 {
   "name": "ruxel-studio",
   "version": "0.5.1",
+  "engines": {
+  "vscode": "^1.85.0"
+},
   "private": true,
   "license": "MIT OR Apache-2.0",
+  "publisher": "c0mbit",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/c0mbit/ruxel-studio"
+  },
   "workspaces": [
     "packages/shared-types",
     "packages/extension",
