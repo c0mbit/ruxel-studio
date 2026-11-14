@@ -124,10 +124,12 @@ if (fs.existsSync(targetRelease)) {
         const srcBin = path.join(targetRelease, binName);
         if (fs.existsSync(srcBin)) {
             const targetArchPath = path.join(hostBinDir, binName);
-            const targetFlatPath = path.join(extensionBinDir, binName);
             fs.copyFileSync(srcBin, targetArchPath);
-            fs.copyFileSync(srcBin, targetFlatPath);
             console.log(`Staged binary: ${targetArchPath}`);
+        }
+        const staleFlatPath = path.join(extensionBinDir, binName);
+        if (fs.existsSync(staleFlatPath)) {
+            fs.unlinkSync(staleFlatPath);
         }
     }
 }

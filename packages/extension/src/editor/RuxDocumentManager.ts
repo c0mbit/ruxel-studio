@@ -17,7 +17,11 @@ import {
 } from "@ruxel/shared-types";
 import type { DaemonClient } from "../daemon/DaemonClient";
 import { SmartDebounceController } from "./DebounceQueue";
-import { resolveAssetPath, resolveAstAssets } from "./AssetResolver";
+import {
+    isPathContainedInRoots,
+    resolveAssetPath,
+    resolveAstAssets,
+} from "./AssetResolver";
 
 export class RuxDocumentManager implements vscode.Disposable {
     private isDisposed: boolean = false;
@@ -518,6 +522,23 @@ export class RuxDocumentManager implements vscode.Disposable {
 
         const outputDir =
             customOutputDir || path.dirname(this.document.uri.fsPath);
+
+        const docDir = path.dirname(this.document.uri.fsPath);
+        const allowedRoots = [
+            docDir,
+            ...(vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath),
+        ];
+
+        if (!isPathContainedInRoots(outputDir, allowedRoots)) {
+            const errorMsg = `Export path outside of authorized workspace root: ${outputDir}`;
+            void vscode.window.showErrorMessage(`Security Alert: ${errorMsg}`);
+            this.postMessage({
+                type: "ERROR",
+                code: "UNAUTHORIZED_PATH",
+                message: errorMsg,
+            });
+            return;
+        }
 
         const frameworkLabel = targetFramework
             ? targetFramework.toUpperCase()

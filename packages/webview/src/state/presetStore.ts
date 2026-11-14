@@ -1,8 +1,16 @@
 import { create } from "zustand";
 import type { TeamPreset, CreateTeamPresetRequest } from "@ruxel/shared-types";
+import { useCrdtStore } from "./crdtStore";
 
 function getHttpApiUrl(): string {
-    return "http://127.0.0.1:4040/api/presets";
+    try {
+        const wsUrl = useCrdtStore.getState().serverUrl || "ws://127.0.0.1:4040/ws";
+        const parsed = new URL(wsUrl);
+        const protocol = parsed.protocol === "wss:" ? "https:" : "http:";
+        return `${protocol}//${parsed.host}/api/presets`;
+    } catch {
+        return "http://127.0.0.1:4040/api/presets";
+    }
 }
 
 export interface PresetState {

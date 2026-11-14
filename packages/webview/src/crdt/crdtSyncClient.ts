@@ -91,7 +91,7 @@ export class CrdtSyncClient {
             const url = new URL(config.serverUrl);
             url.searchParams.set("room", config.roomId);
             url.searchParams.set("user", config.userName);
-            url.searchParams.set("color", encodeURIComponent(config.userColor));
+            url.searchParams.set("color", config.userColor);
 
             const ws = new WebSocket(url.toString());
             ws.binaryType = "arraybuffer";

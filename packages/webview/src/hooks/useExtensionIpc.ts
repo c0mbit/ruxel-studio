@@ -28,8 +28,11 @@ let listenerRefCount = 0;
 let activeMessageListener: ((event: MessageEvent<ExtensionToWebviewMessage>) => void) | null = null;
 
 function dispatchIncomingExtensionMessage(event: MessageEvent<ExtensionToWebviewMessage>) {
+    if (event.source && event.source !== window) {
+        return;
+    }
     const message = event.data;
-    if (!message || typeof message !== "object") {
+    if (!message || typeof message !== "object" || !("type" in message)) {
         return;
     }
 
@@ -43,13 +46,21 @@ function dispatchIncomingExtensionMessage(event: MessageEvent<ExtensionToWebview
                 message.isReadOnly
             );
             break;
-        case "DOCUMENT_UPDATE":
-            useHistoryStore.getState().clear();
+        case "DOCUMENT_UPDATE": {
+            const currentRaw = useEditorStore.getState().rawText;
+            if (
+                currentRaw &&
+                message.rawText &&
+                currentRaw.replace(/\r\n/g, "\n") === message.rawText.replace(/\r\n/g, "\n")
+            ) {
+                return;
+            }
             useEditorStore.getState().updateDocumentFromExternal(
                 message.rawText,
                 message.document
             );
             break;
+        }
         case "VALIDATION_RESULT":
             useEditorStore.getState().setValidationResult(message.result);
             break;

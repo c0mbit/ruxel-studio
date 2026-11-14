@@ -211,6 +211,7 @@ export interface ViewportState {
     ) => void;
     readonly endDrag: () => void;
     readonly registerNodeBounds: (bounds: NodeBounds) => void;
+    readonly batchRegisterBounds: (boundsList: readonly NodeBounds[], pruneStaleIds?: boolean) => void;
     readonly unregisterNodeBounds: (id: string) => void;
     readonly clearAllBounds: () => void;
 
@@ -428,6 +429,42 @@ export const useViewportStore = create<ViewportState>((set, get) => ({
         const nextMap = new Map(get().nodeBounds);
         nextMap.set(bounds.id, bounds);
         set({ nodeBounds: nextMap });
+    },
+
+    batchRegisterBounds: (boundsList, pruneStaleIds = false) => {
+        const currentMap = get().nodeBounds;
+        let hasChanges = false;
+        const nextMap = new Map(currentMap);
+        const incomingIdSet = new Set<string>();
+
+        for (const bounds of boundsList) {
+            incomingIdSet.add(bounds.id);
+            const current = nextMap.get(bounds.id);
+            if (
+                !current ||
+                current.rect.x !== bounds.rect.x ||
+                current.rect.y !== bounds.rect.y ||
+                current.rect.width !== bounds.rect.width ||
+                current.rect.height !== bounds.rect.height ||
+                current.parentId !== bounds.parentId
+            ) {
+                nextMap.set(bounds.id, bounds);
+                hasChanges = true;
+            }
+        }
+
+        if (pruneStaleIds) {
+            for (const key of nextMap.keys()) {
+                if (!incomingIdSet.has(key)) {
+                    nextMap.delete(key);
+                    hasChanges = true;
+                }
+            }
+        }
+
+        if (hasChanges) {
+            set({ nodeBounds: nextMap });
+        }
     },
 
     unregisterNodeBounds: (id) => {

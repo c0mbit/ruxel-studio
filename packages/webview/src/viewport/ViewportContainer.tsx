@@ -913,7 +913,7 @@ export const ViewportContainer: FC<ViewportContainerProps> = ({
                             <iframe
                                 src={wasmPreviewUrl}
                                 title="Ruxel Wasm Native Preview"
-                                sandbox="allow-scripts allow-same-origin"
+                                sandbox="allow-scripts"
                                 className="rounded-lg shadow-2xl border border-zinc-700 bg-zinc-900"
                                 style={{
                                     width: `${targetWindowRect.width}px`,

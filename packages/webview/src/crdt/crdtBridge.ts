@@ -1,17 +1,18 @@
 import * as Y from "yjs";
-import type {
-    RuxDocument,
-    WidgetNode,
-    WidgetType,
-    WidgetLayout,
-    WidgetProperties,
-    WidgetEvents,
-    WidgetBindings,
-    AnimationDefinition,
-    ProjectMetadata,
-    WindowConfig,
-    AssetRegistry,
-    ThemeConfig,
+import {
+    type RuxDocument,
+    type WidgetNode,
+    type WidgetType,
+    type WidgetLayout,
+    type WidgetProperties,
+    type WidgetEvents,
+    type WidgetBindings,
+    type AnimationDefinition,
+    type ProjectMetadata,
+    type WindowConfig,
+    type AssetRegistry,
+    type ThemeConfig,
+    createDefaultTheme,
 } from "@ruxel/shared-types";
 
 export const CRDT_ORIGIN_LOCAL = "zustand-local";
@@ -222,11 +223,6 @@ export function reconcileChildrenArray(
                 childArray.insert(i, [newMap]);
             }
         }
-    }
-
-    // 3. Trim any trailing excess
-    if (childArray.length > incomingChildren.length) {
-        childArray.delete(incomingChildren.length, childArray.length - incomingChildren.length);
     }
 }
 
@@ -509,9 +505,15 @@ export class CrdtDocumentBridge {
         };
 
         const themeMap = this.ydoc.getMap<unknown>("theme");
-        const theme = (themeMap.toJSON() as ThemeConfig) ?? {
-            active_theme: "default_dark",
-            custom_palettes: [],
+        const rawTheme = (themeMap.toJSON() as Partial<ThemeConfig>) || {};
+        const defaultTheme = createDefaultTheme();
+        const theme: ThemeConfig = {
+            active_scheme: rawTheme.active_scheme ?? defaultTheme.active_scheme,
+            color_palettes: rawTheme.color_palettes ?? defaultTheme.color_palettes,
+            typography: rawTheme.typography ?? defaultTheme.typography,
+            border_radii: rawTheme.border_radii ?? defaultTheme.border_radii,
+            shadows: rawTheme.shadows ?? defaultTheme.shadows,
+            spacing: rawTheme.spacing ?? defaultTheme.spacing,
         };
 
         const compMap = this.ydoc.getMap<unknown>("components");

@@ -67,8 +67,8 @@ export const DomWidgetRenderer: FC<DomWidgetRendererProps> = ({
     const windowContainerRef = useRef<HTMLDivElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const camera = useViewportStore((state) => state.camera);
-    const registerNodeBounds = useViewportStore(
-        (state) => state.registerNodeBounds
+    const batchRegisterBounds = useViewportStore(
+        (state) => state.batchRegisterBounds
     );
     const setHoveredNodeId = useViewportStore(
         (state) => state.setHoveredNodeId
@@ -101,7 +101,13 @@ export const DomWidgetRenderer: FC<DomWidgetRendererProps> = ({
                 return;
             }
 
+            const currentZoom = useViewportStore.getState().camera.zoom || 1.0;
             const elements = container.querySelectorAll<HTMLElement>("[data-node-id]");
+            const boundsList: {
+                id: string;
+                rect: { x: number; y: number; width: number; height: number };
+            }[] = [];
+
             elements.forEach((el) => {
                 const id = el.getAttribute("data-node-id");
                 if (!id) {
@@ -109,12 +115,12 @@ export const DomWidgetRenderer: FC<DomWidgetRendererProps> = ({
                 }
 
                 const elRect = el.getBoundingClientRect();
-                const worldX = (elRect.left - containerRect.left) / camera.zoom;
-                const worldY = (elRect.top - containerRect.top) / camera.zoom;
-                const worldWidth = elRect.width / camera.zoom;
-                const worldHeight = elRect.height / camera.zoom;
+                const worldX = (elRect.left - containerRect.left) / currentZoom;
+                const worldY = (elRect.top - containerRect.top) / currentZoom;
+                const worldWidth = elRect.width / currentZoom;
+                const worldHeight = elRect.height / currentZoom;
 
-                registerNodeBounds({
+                boundsList.push({
                     id,
                     rect: {
                         x: Math.round(worldX),
@@ -124,6 +130,8 @@ export const DomWidgetRenderer: FC<DomWidgetRendererProps> = ({
                     },
                 });
             });
+
+            batchRegisterBounds(boundsList, true);
         };
 
         updateAllBounds();
@@ -144,7 +152,7 @@ export const DomWidgetRenderer: FC<DomWidgetRendererProps> = ({
                 scrollContainer.removeEventListener("scroll", updateAllBounds);
             }
         };
-    }, [document, camera, effectiveDimensions, registerNodeBounds]);
+    }, [document, effectiveDimensions, batchRegisterBounds]);
 
     const activePalette =
         theme.color_palettes[
